@@ -2,8 +2,8 @@
 set -euf
 VERSION=${1-""}
 PKGNAME=$(sed -n '/^name = / { s/name = "\(.*\)"/\1/ ;p;}' pyproject.toml)
-
-docker ps -q >/dev/null || exit 1
+PKGNAME=${PKGNAME//-/_} # replace dashes with underscores
+echo "Package name is ${PKGNAME}"
 
 bumpversion() {
   current=$(git describe --tags $(git rev-list --tags --max-count=1) || true)
@@ -56,5 +56,3 @@ mkdir dist
 uv build
 gh release create ${VERSION} ./dist/${PKGNAME}-${VERSION}.tar.gz
 uv publish -u __token__ -p $(pass show pypi/token)
-
-./packaging/aur/build.sh
