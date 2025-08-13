@@ -8,6 +8,7 @@ on:
       - "git_branch_list/**"
       - "pyproject.toml"
       - "contrib/**"
+      - ".github/workflows/aur.yml"
   pull_request:
     paths:
       - "aur/**"
