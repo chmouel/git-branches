@@ -92,6 +92,60 @@ def test_preview_header_variants(monkeypatch, capsys):
     run_case("closed", False, True)
 
 
+def test_find_pr_for_ref_graphql(monkeypatch):
+    class Resp:
+        ok = True
+
+        def __init__(self, data):
+            self._data = data
+
+        def json(self):
+            return self._data
+
+    graphql_response = {
+        "data": {
+            "repository": {
+                "pullRequests": {
+                    "nodes": [
+                        {
+                            "number": 123,
+                            "title": "GraphQL Test PR",
+                            "headRefOid": "abcdef123",
+                            "state": "OPEN",
+                            "isDraft": False,
+                            "mergedAt": None,
+                            "baseRepository": {
+                                "owner": {"login": "test-owner"},
+                                "name": "test-repo",
+                            },
+                        }
+                    ]
+                }
+            }
+        }
+    }
+
+    monkeypatch.setattr(github, "detect_base_repo", lambda: ("test-owner", "test-repo"))
+    monkeypatch.setattr(
+        github,
+        "_requests_post",
+        lambda url, headers, json, timeout=3.0: Resp(graphql_response),
+    )
+    monkeypatch.setattr(
+        github, "run", lambda cmd, check=True: type("CP", (), {"stdout": "origin\n"})()
+    )
+
+    num, sha, state, title, draft, merged_at, pr_base = github._find_pr_for_ref("my-branch")
+
+    assert num == "123"
+    assert sha == "abcdef123"
+    assert state == "open"
+    assert title == "GraphQL Test PR"
+    assert not draft
+    assert not merged_at
+    assert pr_base == ("test-owner", "test-repo")
+
+
 def test_remote_ssh_url(monkeypatch):
     class CP:
         def __init__(self, out):

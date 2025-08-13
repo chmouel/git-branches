@@ -90,6 +90,14 @@ def _requests_get(url: str, headers: dict[str, str], timeout: float = 3.0):  # p
     return requests.get(url, headers=headers, timeout=timeout)
 
 
+def _requests_post(
+    url: str, headers: dict[str, str], json: dict, timeout: float = 3.0
+):  # pragma: no cover
+    if requests is None:
+        raise RuntimeError("requests not available")
+    return requests.post(url, headers=headers, json=json, timeout=timeout)
+
+
 def get_branch_pushed_status(base: tuple[str, str] | None, branch: str) -> str:
     if not base:
         return ""
@@ -143,7 +151,7 @@ def _find_pr_for_ref(ref: str) -> tuple[str, str, str, str, bool, str, tuple[str
     if not base:
         return "", "", "", "", False, "", None
     base_owner, base_repo = base
-    head_owner = base_owner
+
     branch_name = ref
     if "/" in ref:
         remote_candidate = ref.split("/", 1)[0]
@@ -152,45 +160,65 @@ def _find_pr_for_ref(ref: str) -> tuple[str, str, str, str, bool, str, tuple[str
             rems = [r.strip() for r in cp.stdout.splitlines() if r.strip()]
             if remote_candidate in rems:
                 branch_name = ref.split("/", 1)[1]
-                det = detect_github_repo(remote_candidate)
-                if det:
-                    head_owner = det[0]
         except Exception:
             pass
-    else:
-        try:
-            cp = run(
-                ["git", "for-each-ref", "--format=%(upstream:short)", f"refs/heads/{branch_name}"]
-            )
-            upstream = cp.stdout.strip()
-            if upstream:
-                remote_candidate = upstream.split("/", 1)[0]
-                det = detect_github_repo(remote_candidate)
-                if det:
-                    head_owner = det[0]
-        except Exception:
-            pass
+
     headers = {"Accept": "application/vnd.github+json"}
     tok = _github_token()
     if tok:
         headers["Authorization"] = f"Bearer {tok}"
-    enc_branch = branch_name.replace("/", "%2F")
-    url = f"https://api.github.com/repos/{base_owner}/{base_repo}/pulls?state=all&per_page=1&head={head_owner}:{enc_branch}"
+
+    query = """
+    query PullRequestForBranch($owner: String!, $repo: String!, $headRefName: String!) {
+        repository(owner: $owner, name: $repo) {
+          pullRequests(headRefName: $headRefName, states: [OPEN, CLOSED, MERGED], first: 1, orderBy: {field: CREATED_AT, direction: DESC}) {
+            nodes {
+                url,
+                number,
+                state,
+                title,
+                isDraft,
+                mergedAt,
+                headRefName,
+                headRepository {
+                  nameWithOwner
+                },
+                headRefOid,
+                baseRepository {
+                    owner { login },
+                    name
+                }
+            }
+          }
+        }
+    }
+    """
+    variables = {"owner": base_owner, "repo": base_repo, "headRefName": branch_name}
+    url = "https://api.github.com/graphql"
+
     try:
-        r = _requests_get(url, headers=headers)
-        items = r.json() if r.ok else []
-        if isinstance(items, list) and items:
-            pr = items[0]
-            num = str(pr.get("number", ""))
-            title = pr.get("title", "")
-            sha = pr.get("head", {}).get("sha", "")
-            state = pr.get("state", "open")
-            draft = bool(pr.get("draft", False))
-            merged_at = pr.get("merged_at") or ""
-            pr_base_owner = pr.get("base", {}).get("repo", {}).get("owner", {}).get("login", "")
-            pr_base_repo = pr.get("base", {}).get("repo", {}).get("name", "")
-            pr_base = (pr_base_owner, pr_base_repo) if pr_base_owner and pr_base_repo else None
-            return num, sha, state, title, draft, merged_at, pr_base
+        r = _requests_post(url, headers=headers, json={"query": query, "variables": variables})
+        if not r.ok:
+            return "", "", "", "", False, "", None
+        data = r.json()
+        nodes = data.get("data", {}).get("repository", {}).get("pullRequests", {}).get("nodes", [])
+        if not nodes:
+            return "", "", "", "", False, "", None
+
+        pr = nodes[0]
+        num = str(pr.get("number", ""))
+        title = pr.get("title", "")
+        sha = pr.get("headRefOid", "")
+        state = pr.get("state", "open").lower()
+        draft = bool(pr.get("isDraft", False))
+        merged_at = pr.get("mergedAt") or ""
+        if state == "merged":
+            state = "closed"
+
+        pr_base_owner = pr.get("baseRepository", {}).get("owner", {}).get("login", "")
+        pr_base_repo = pr.get("baseRepository", {}).get("name", "")
+        pr_base = (pr_base_owner, pr_base_repo) if pr_base_owner and pr_base_repo else None
+        return num, sha, state, title, draft, merged_at, pr_base
     except Exception:
         pass
     return "", "", "", "", False, "", None
