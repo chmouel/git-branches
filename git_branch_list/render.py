@@ -260,7 +260,7 @@ def format_pr_details(
 
     details = []
     if labels:
-        label_str = " ".join(f"{colors.cyan} {l}{colors.reset}" for l in labels)
+        label_str = " ".join(f"{colors.cyan} {label}{colors.reset}" for label in labels)
         details.append(label_str)
 
     review_status_map = {

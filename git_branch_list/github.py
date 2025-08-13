@@ -152,13 +152,13 @@ def _fetch_prs_and_populate_cache() -> None:
 
     if os.path.exists(CACHE_FILE):
         try:
-            with open(CACHE_FILE, "r", encoding="utf-8") as f:
+            with open(CACHE_FILE, encoding="utf-8") as f:
                 data = json.load(f)
             if time.time() - data.get("timestamp", 0) < CACHE_DURATION_SECONDS:
                 _pr_cache = data.get("prs", {})
                 if _pr_cache:
                     return
-        except (json.JSONDecodeError, IOError):
+        except (OSError, json.JSONDecodeError):
             pass
 
     base = detect_base_repo()
