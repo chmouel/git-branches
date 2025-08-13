@@ -2,18 +2,19 @@ name: Arch AUR PKGBUILD CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
     paths:
-      - 'aur/**'
-      - 'git_branch_list/**'
-      - 'pyproject.toml'
-      - 'contrib/**'
+      - "aur/**"
+      - "git_branch_list/**"
+      - "pyproject.toml"
+      - "contrib/**"
   pull_request:
     paths:
-      - 'aur/**'
-      - 'git_branch_list/**'
-      - 'pyproject.toml'
-      - 'contrib/**'
+      - "aur/**"
+      - "git_branch_list/**"
+      - "pyproject.toml"
+      - "contrib/**"
+      - ".github/workflows/aur.yml"
 
 jobs:
   build:
