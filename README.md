@@ -31,6 +31,29 @@ An interactive Git branch browser powered by fzf, with rich previews for GitHub 
   - From this directory: `uv tool install .`
   - Then invoke the console script: `git-branches`
 
+### Homebrew (Tap)
+
+You can install via a Homebrew tap that ships a Formula for `git-branches`.
+
+Option A — tap this repo directly (HEAD installs from the main branch):
+
+```bash
+brew tap chmouel/git-branches https://github.com/chmouel/git-branches
+brew install --HEAD chmouel/git-branches/git-branches
+```
+
+Option B — copy `Formula/git-branches.rb` into your own tap repo (recommended for teams) and install:
+
+```bash
+brew tap <org>/<tap>
+brew install --HEAD <org>/<tap>/git-branches
+```
+
+Notes:
+- The Formula uses Homebrew’s Python virtualenv and installs `git-branches` along with its Python dependencies.
+- Runtime dependencies `git` and `fzf` are declared and installed by Homebrew.
+- `--HEAD` installs from the main branch. For a pinned/stable release, update the Formula `url` and `sha256` to a tagged tarball.
+
 ## Quickstart
 
 - Browse and checkout local branches:

@@ -1,0 +1,38 @@
+name: Homebrew (macOS) CI
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'Formula/**'
+      - 'git_branch_list/**'
+      - 'pyproject.toml'
+      - 'README.md'
+  pull_request:
+    paths:
+      - 'Formula/**'
+      - 'git_branch_list/**'
+      - 'pyproject.toml'
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show brew config
+        run: |
+          brew --version
+          brew config
+
+      - name: Install formula (HEAD)
+        run: |
+          brew install --formula ./Formula/git-branches.rb --HEAD
+
+      - name: Smoke test
+        run: |
+          git-branches -h || true
+          which git-branches
+          git-branches -h | head -n 5
+
