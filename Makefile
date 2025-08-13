@@ -29,6 +29,7 @@ dev:
 	$(UV) ruff check --fix $(PY_SRC) tests
 	$(UV) pytest -q tests
 	$(UV) ruff format $(PY_SRC) tests
+	@type -p markdownlint >/dev/null && markdownlint --fix README.md
 
 # CI-friendly aggregate target
 ci: install lint test format
