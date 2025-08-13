@@ -47,21 +47,27 @@ def _first_remote_name() -> str:
 
 
 def detect_base_repo() -> tuple[str, str] | None:
+    remotes = []
     try:
-        cp = run(["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
-        upstream_remote = cp.stdout.strip().split("/", 1)[0]
+        cp = run(["git", "remote"])
+        remotes = [r.strip() for r in cp.stdout.splitlines() if r.strip()]
     except Exception:
-        upstream_remote = ""
-    if upstream_remote:
-        det = detect_github_repo(upstream_remote)
-        if det:
-            return det
-    for cand in ("origin", _first_remote_name()):
-        if not cand:
-            continue
-        det = detect_github_repo(cand)
-        if det:
-            return det
+        pass
+
+    # Prioritize 'upstream', then 'origin'
+    for cand in ("upstream", "origin"):
+        if cand in remotes:
+            det = detect_github_repo(cand)
+            if det:
+                return det
+
+    # Fallback to any other remote
+    for r in remotes:
+        if r not in ("upstream", "origin"):
+            det = detect_github_repo(r)
+            if det:
+                return det
+
     return None
 
 
@@ -132,10 +138,10 @@ def _commit_status_icon(base: tuple[str, str] | None, sha: str, colors: Colors) 
     return ""
 
 
-def _find_pr_for_ref(ref: str) -> tuple[str, str, str, str, bool, str]:
+def _find_pr_for_ref(ref: str) -> tuple[str, str, str, str, bool, str, tuple[str, str] | None]:
     base = detect_base_repo()
     if not base:
-        return "", "", "", "", False, ""
+        return "", "", "", "", False, "", None
     base_owner, base_repo = base
     head_owner = base_owner
     branch_name = ref
@@ -181,10 +187,13 @@ def _find_pr_for_ref(ref: str) -> tuple[str, str, str, str, bool, str]:
             state = pr.get("state", "open")
             draft = bool(pr.get("draft", False))
             merged_at = pr.get("merged_at") or ""
-            return num, sha, state, title, draft, merged_at
+            pr_base_owner = pr.get("base", {}).get("repo", {}).get("owner", {}).get("login", "")
+            pr_base_repo = pr.get("base", {}).get("repo", {}).get("name", "")
+            pr_base = (pr_base_owner, pr_base_repo) if pr_base_owner and pr_base_repo else None
+            return num, sha, state, title, draft, merged_at, pr_base
     except Exception:
         pass
-    return "", "", "", "", False, ""
+    return "", "", "", "", False, "", None
 
 
 def preview_branch(ref: str) -> None:
@@ -192,8 +201,7 @@ def preview_branch(ref: str) -> None:
     from .render import setup_colors
 
     colors = setup_colors(no_color=False)
-    pr_num, pr_sha, pr_state, pr_title, pr_draft, pr_merged_at = _find_pr_for_ref(ref)
-    base = detect_base_repo()
+    pr_num, pr_sha, pr_state, pr_title, pr_draft, pr_merged_at, pr_base = _find_pr_for_ref(ref)
     if pr_num:
         if pr_state == "closed":
             if pr_merged_at:
@@ -209,10 +217,10 @@ def preview_branch(ref: str) -> None:
             else:
                 pr_icon = f"{colors.green}{colors.reset}"
                 pr_status = "Open"
-        base_owner, base_repo = base if base else ("", "")
+        base_owner, base_repo = pr_base if pr_base else ("", "")
         pr_url = f"https://github.com/{base_owner}/{base_repo}/pull/{pr_num}"
         pr_link = f"\x1b]8;;{pr_url}\x1b\\#{pr_num}\x1b]8;;\x1b\\"
-        ci_icon = _commit_status_icon(base, pr_sha, colors)
+        ci_icon = _commit_status_icon(pr_base, pr_sha, colors)
         header = f"{pr_icon} {colors.italic_on}{pr_status}{colors.italic_off}  {pr_link}  {ci_icon}  {colors.bold}{pr_title}{colors.reset}\n"
         sys.stdout.write(header)
         cols = int(os.environ.get("FZF_PREVIEW_COLUMNS", "80"))
@@ -221,11 +229,10 @@ def preview_branch(ref: str) -> None:
 
 
 def open_url_for_ref(ref: str) -> int:
-    pr_num, _sha, _state, _title, _draft, _merged_at = _find_pr_for_ref(ref)
-    base = detect_base_repo()
-    if not pr_num or not base:
+    pr_num, _sha, _state, _title, _draft, _merged_at, pr_base = _find_pr_for_ref(ref)
+    if not pr_num or not pr_base:
         return 1
-    base_owner, base_repo = base
+    base_owner, base_repo = pr_base
     url = f"https://github.com/{base_owner}/{base_repo}/pull/{pr_num}"
     try:
         webbrowser.open(url)

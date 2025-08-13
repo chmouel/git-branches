@@ -63,10 +63,17 @@ def test_preview_header_variants(monkeypatch, capsys):
         monkeypatch.setattr(
             github,
             "_find_pr_for_ref",
-            lambda ref: ("123", "deadbeef", state, "My Title", draft, "now" if merged else ""),
+            lambda ref: (
+                "123",
+                "deadbeef",
+                state,
+                "My Title",
+                draft,
+                "now" if merged else "",
+                ("owner", "repo"),
+            ),
         )
         monkeypatch.setattr(github, "_commit_status_icon", lambda base, sha, colors: "[CI]")
-        monkeypatch.setattr(github, "detect_base_repo", lambda: ("owner", "repo"))
         monkeypatch.setattr(github, "git_log_oneline", lambda ref, n=10, colors=None: "LOG\n")
         github.preview_branch("feature/x")
         s = capsys.readouterr().out

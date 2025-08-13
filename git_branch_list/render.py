@@ -86,8 +86,6 @@ def setup_colors(no_color: bool) -> Colors:
 
 
 def highlight_subject(subject: str, colors: Colors) -> str:
-    import re
-
     replacements = {
         "feat": colors.feat,
         "fix": colors.fix,
