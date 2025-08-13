@@ -26,13 +26,17 @@ jobs:
           brew --version
           brew config
 
-      - name: Install formula (HEAD)
+      - name: Create local tap and install (HEAD)
         run: |
-          brew install --formula ./Formula/git-branches.rb --HEAD
+          TAP="local/git-branches"
+          brew tap-new "$TAP"
+          TAP_DIR="$(brew --repo "$TAP")"
+          mkdir -p "$TAP_DIR/Formula"
+          cp Formula/git-branches.rb "$TAP_DIR/Formula/"
+          brew install --HEAD "$TAP/git-branches"
 
       - name: Smoke test
         run: |
           git-branches -h || true
           which git-branches
           git-branches -h | head -n 5
-

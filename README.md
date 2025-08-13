@@ -42,7 +42,18 @@ brew tap chmouel/git-branches https://github.com/chmouel/git-branches
 brew install --HEAD chmouel/git-branches/git-branches
 ```
 
-Option B — copy `Formula/git-branches.rb` into your own tap repo (recommended for teams) and install:
+Option B — local developer tap (no remote push needed):
+
+```bash
+TAP="${USER}/git-branches-dev"
+brew tap-new "$TAP"
+TAP_DIR="$(brew --repo "$TAP")"
+mkdir -p "$TAP_DIR/Formula"
+cp Formula/git-branches.rb "$TAP_DIR/Formula/"
+brew install --HEAD "$TAP/git-branches"
+```
+
+Option C — copy `Formula/git-branches.rb` into your own GitHub tap repo (recommended for teams) and install:
 
 ```bash
 brew tap <org>/<tap>
