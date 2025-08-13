@@ -98,3 +98,16 @@ def remote_ssh_url(remote: str) -> str:
         url = "git@" + url[len("https://") :]
         url = url.replace("/", ":", 1)
     return url
+
+
+def is_workdir_dirty() -> bool:
+    """Return True if the working directory has uncommitted changes.
+
+    Uses `git status --porcelain` which reports staged/unstaged and untracked files.
+    On any error (e.g., not a repo), returns False to avoid breaking non-git contexts.
+    """
+    try:
+        cp = run(["git", "status", "--porcelain"], check=True)
+        return bool(cp.stdout.strip())
+    except Exception:
+        return False

@@ -8,7 +8,6 @@ An interactive Git branch browser powered by fzf, with rich previews for GitHub 
 
 <img width="1758" height="1116" alt="image" src="https://github.com/user-attachments/assets/fbf02793-8934-4457-88cf-19f56c857107" />
 
-
 ## Highlights
 
 - fzf-native UX: reverse list, previews, key bindings, multi-select for deletes.

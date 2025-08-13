@@ -69,6 +69,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-p", dest="preview_ref", metavar="REF", help=argparse.SUPPRESS)
     p.add_argument("-f", action="store_true", dest="force", help=argparse.SUPPRESS)
     p.add_argument("--delete-one", dest="delete_one", metavar="BRANCH", help=argparse.SUPPRESS)
+    # internal helpers for fzf reload
+    p.add_argument(
+        "--emit-local-rows",
+        action="store_true",
+        dest="emit_local_rows",
+        help=argparse.SUPPRESS,
+    )
+    p.add_argument(
+        "--emit-remote-rows",
+        dest="emit_remote_rows",
+        metavar="REMOTE",
+        help=argparse.SUPPRESS,
+    )
     p.add_argument("args", nargs=argparse.REMAINDER, help=argparse.SUPPRESS)
     return p
 
@@ -139,9 +152,11 @@ def interactive(args: argparse.Namespace) -> int:
             header = "Select local branches to DELETE (multi-select with TAB)"
             preview_cmd = [exe, "-p", "{2}"]
             rows = _build_rows_local(False, limit, colors)
+            # After deleting a branch inline, reload the list
+            reload_cmd = f"{exe} --emit-local-rows" + (f" -n {limit}" if limit else "")
             binds = [
                 f"ctrl-o:execute-silent({exe} -o {{2}})",
-                f"alt-k:execute(gum confirm 'Delete {{2}}?' && {exe} --delete-one {{2}})",
+                f"alt-k:execute(gum confirm 'Delete {{2}}?' && {exe} --delete-one {{2}})+reload({reload_cmd})",
             ]
             selected = fzf_select(
                 rows, header=header, preview_cmd=preview_cmd, multi=True, extra_binds=binds
@@ -182,8 +197,20 @@ def interactive(args: argparse.Namespace) -> int:
             return 0
         try:
             run(["git", "show-ref", "--verify", "--quiet", f"refs/heads/{sel}"], check=True)
+            if _is_workdir_dirty():
+                print(
+                    "Error: Uncommitted changes detected. Please commit or stash before checkout.",
+                    file=sys.stderr,
+                )
+                return 1
             run(["git", "checkout", sel])
         except Exception:
+            if _is_workdir_dirty():
+                print(
+                    "Error: Uncommitted changes detected. Please commit or stash before checkout.",
+                    file=sys.stderr,
+                )
+                return 1
             run(["git", "checkout", "-b", sel, f"{remote}/{sel}"])
         return 0
 
@@ -191,9 +218,18 @@ def interactive(args: argparse.Namespace) -> int:
     header = "Local branches (ENTER=checkout, ESC=cancel)"
     preview_cmd = [exe, "-p", "{2}"]
     rows = _build_rows_local(args.show_status, limit, colors)
+    # After deleting a branch inline, reload the list keeping flags consistent
+    reload_parts: list[str] = [exe, "--emit-local-rows"]
+    if args.show_status:
+        reload_parts.append("-s")
+    if args.show_status_all:
+        reload_parts.append("-S")
+    if limit:
+        reload_parts.extend(["-n", str(limit)])
+    reload_cmd = " ".join(reload_parts)
     binds = [
         f"ctrl-o:execute-silent({exe} -o {{2}})",
-        f"alt-k:execute(gum confirm 'Delete {{2}}?' && {exe} --delete-one {{2}})",
+        f"alt-k:execute(gum confirm 'Delete {{2}}?' && {exe} --delete-one {{2}})+reload({reload_cmd})",
     ]
     selected = fzf_select(
         rows, header=header, preview_cmd=preview_cmd, multi=False, extra_binds=binds
@@ -204,14 +240,34 @@ def interactive(args: argparse.Namespace) -> int:
     if args.list_only:
         print(sel)
         return 0
+    if _is_workdir_dirty():
+        print(
+            "Error: Uncommitted changes detected. Please commit or stash before checkout.",
+            file=sys.stderr,
+        )
+        return 1
     run(["git", "checkout", sel])
     return 0
+
+
+def _is_workdir_dirty() -> bool:
+    try:
+        cp = run(["git", "status", "--porcelain"], check=True)
+        return bool(cp.stdout.strip())
+    except Exception:
+        return False
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        if args.preview_ref or args.open_ref or args.delete_one:
+        if (
+            args.preview_ref
+            or args.open_ref
+            or args.delete_one
+            or args.emit_local_rows
+            or args.emit_remote_rows
+        ):
             ensure_git_repo(required=True)
             if args.open_ref:
                 return github.open_url_for_ref(args.open_ref)
@@ -219,6 +275,21 @@ def main(argv: list[str] | None = None) -> int:
                 ref = args.preview_ref
                 if ref:
                     github.preview_branch(ref)
+                return 0
+            # emit rows for fzf reloads
+            if args.emit_local_rows or args.emit_remote_rows:
+                colors = setup_colors(args.no_color)
+                default_limit_branch_status = 10
+                limit = args.limit
+                if args.show_status and not args.show_status_all and not limit:
+                    limit = default_limit_branch_status
+                if args.emit_local_rows:
+                    rows = _build_rows_local(args.show_status, limit, colors)
+                else:
+                    assert args.emit_remote_rows is not None
+                    rows = _build_rows_remote(args.emit_remote_rows, limit, colors)
+                for shown, value in rows:
+                    print(f"{shown}\t{value}")
                 return 0
             br = args.delete_one
             if not br:
