@@ -1,7 +1,4 @@
-require "language/python/virtualenv"
-
 class GitBranches < Formula
-  include Language::Python::Virtualenv
 
   desc "Interactive Git branch browser with fzf and GitHub PR status"
   homepage "https://github.com/chmouel/git-branches"
@@ -13,7 +10,15 @@ class GitBranches < Formula
   depends_on "git"
 
   def install
-    virtualenv_install_with_resources
+    py = Formula["python@3.12"].opt_bin/"python3.12"
+    # Create venv
+    system py, "-m", "venv", libexec
+    # Upgrade pip tooling
+    system libexec/"bin/pip", "install", "--upgrade", "pip", "setuptools", "wheel"
+    # Install this package into the venv
+    system libexec/"bin/pip", "install", buildpath
+    # Link the console script
+    bin.install_symlink libexec/"bin/git-branches"
   end
 
   test do
@@ -21,4 +26,3 @@ class GitBranches < Formula
     assert_match "Interactive git branch viewer", help
   end
 end
-
