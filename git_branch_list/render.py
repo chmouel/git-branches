@@ -249,6 +249,43 @@ def format_branch_info(
     )
 
 
+def format_pr_details(
+    labels: list[str],
+    review_requests: list[str],
+    latest_reviews: dict[str, str],
+    colors: Colors,
+) -> str:
+    if not labels and not review_requests and not latest_reviews:
+        return ""
+
+    details = []
+    if labels:
+        label_str = " ".join(f"{colors.cyan} {l}{colors.reset}" for l in labels)
+        details.append(label_str)
+
+    review_status_map = {
+        "APPROVED": f"{colors.green}{colors.reset}",
+        "CHANGES_REQUESTED": f"{colors.red}{colors.reset}",
+        "COMMENTED": f"{colors.yellow}{colors.reset}",
+        "PENDING": f"{colors.yellow}{colors.reset}",
+    }
+
+    reviewers = set(review_requests) | set(latest_reviews.keys())
+    if reviewers:
+        review_parts = []
+        for reviewer in sorted(list(reviewers)):
+            status = latest_reviews.get(reviewer)
+            icon = (
+                review_status_map.get(status, f"{colors.yellow}{colors.reset}")
+                if status
+                else f"{colors.yellow}{colors.reset}"
+            )
+            review_parts.append(f"{icon} {reviewer}")
+        details.append("  ".join(review_parts))
+
+    return "  ".join(details)
+
+
 def git_log_oneline(ref: str, n: int = 10, colors: Colors | None = None) -> str:
     try:
         if not colors:

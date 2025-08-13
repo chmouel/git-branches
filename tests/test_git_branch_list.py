@@ -71,6 +71,10 @@ def test_preview_header_variants(monkeypatch, capsys):
                 draft,
                 "now" if merged else "",
                 ("owner", "repo"),
+                [],
+                [],
+                {},
+                "PR Body",
             ),
         )
         monkeypatch.setattr(github, "git_log_oneline", lambda ref, n=10, colors=None: "LOG\n")
@@ -79,6 +83,7 @@ def test_preview_header_variants(monkeypatch, capsys):
         assert "#123" in s
         assert "My Title" in s
         assert "LOG" in s
+        assert "PR Body" in s
         if merged:
             assert "Merged" in s
         elif draft:
@@ -113,9 +118,26 @@ def test_find_pr_for_ref_graphql(monkeypatch):
                             "state": "OPEN",
                             "isDraft": False,
                             "mergedAt": None,
+                            "body": "This is the PR body.",
                             "baseRepository": {
                                 "owner": {"login": "test-owner"},
                                 "name": "test-repo",
+                            },
+                            "labels": {"nodes": [{"name": "bug"}, {"name": "enhancement"}]},
+                            "reviewRequests": {
+                                "nodes": [
+                                    {"requestedReviewer": {"login": "user1"}},
+                                    {"requestedReviewer": {"name": "team-a"}},
+                                ]
+                            },
+                            "latestReviews": {
+                                "nodes": [
+                                    {"author": {"login": "user2"}, "state": "APPROVED"},
+                                    {
+                                        "author": {"login": "user3"},
+                                        "state": "CHANGES_REQUESTED",
+                                    },
+                                ]
                             },
                         }
                     ]
@@ -134,7 +156,19 @@ def test_find_pr_for_ref_graphql(monkeypatch):
         github, "run", lambda cmd, check=True: type("CP", (), {"stdout": "origin\n"})()
     )
 
-    num, sha, state, title, draft, merged_at, pr_base = github._find_pr_for_ref("my-branch")
+    (
+        num,
+        sha,
+        state,
+        title,
+        draft,
+        merged_at,
+        pr_base,
+        labels,
+        review_requests,
+        latest_reviews,
+        body,
+    ) = github._find_pr_for_ref("my-branch")
 
     assert num == "123"
     assert sha == "abcdef123"
@@ -143,6 +177,26 @@ def test_find_pr_for_ref_graphql(monkeypatch):
     assert not draft
     assert not merged_at
     assert pr_base == ("test-owner", "test-repo")
+    assert labels == ["bug", "enhancement"]
+    assert review_requests == ["user1", "team-a"]
+    assert latest_reviews == {"user2": "APPROVED", "user3": "CHANGES_REQUESTED"}
+    assert body == "This is the PR body."
+
+
+def test_format_pr_details(monkeypatch):
+    colors = render.setup_colors(no_color=False)
+    labels = ["bug", "enhancement"]
+    review_requests = ["user1", "team-a"]
+    latest_reviews = {"user2": "APPROVED", "user3": "CHANGES_REQUESTED"}
+    details = render.format_pr_details(labels, review_requests, latest_reviews, colors)
+    assert "bug" in details
+    assert "enhancement" in details
+    assert "user1" in details
+    assert "team-a" in details
+    assert "user2" in details
+    assert "user3" in details
+    assert "" in details
+    assert "" in details
 
 
 def test_remote_ssh_url(monkeypatch):

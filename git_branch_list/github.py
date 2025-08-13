@@ -247,9 +247,29 @@ def _fetch_prs_and_populate_cache() -> None:
         mergedAt,
         headRefName,
         headRefOid,
+        body,
         baseRepository {
             owner { login },
             name
+        },
+        labels(first: 5) {
+            nodes {
+                name
+            }
+        },
+        reviewRequests(first: 5) {
+            nodes {
+                requestedReviewer {
+                    ... on User { login }
+                    ... on Team { name }
+                }
+            }
+        },
+        latestReviews(first: 10) {
+            nodes {
+                author { login },
+                state
+            }
         }
     }
     """
@@ -272,7 +292,9 @@ def _fetch_prs_and_populate_cache() -> None:
         pass
 
 
-def _find_pr_for_ref(ref: str) -> tuple[str, str, str, str, bool, str, tuple[str, str] | None]:
+def _find_pr_for_ref(
+    ref: str,
+) -> tuple[str, str, str, str, bool, str, tuple[str, str] | None, list, list, dict, str]:
     _fetch_prs_and_populate_cache()
 
     branch_name = ref
@@ -294,18 +316,44 @@ def _find_pr_for_ref(ref: str) -> tuple[str, str, str, str, bool, str, tuple[str
         state = pr.get("state", "open").lower()
         draft = bool(pr.get("isDraft", False))
         merged_at = pr.get("mergedAt") or ""
+        body = pr.get("body", "")
         if state == "merged":
             state = "closed"
 
         pr_base_owner = pr.get("baseRepository", {}).get("owner", {}).get("login", "")
         pr_base_repo = pr.get("baseRepository", {}).get("name", "")
         pr_base = (pr_base_owner, pr_base_repo) if pr_base_owner and pr_base_repo else None
-        return num, sha, state, title, draft, merged_at, pr_base
+
+        labels = [label["name"] for label in pr.get("labels", {}).get("nodes", [])]
+        review_requests = [
+            req["requestedReviewer"].get("login") or req["requestedReviewer"].get("name")
+            for req in pr.get("reviewRequests", {}).get("nodes", [])
+            if req.get("requestedReviewer")
+        ]
+        latest_reviews = {
+            review["author"]["login"]: review["state"]
+            for review in pr.get("latestReviews", {}).get("nodes", [])
+            if review.get("author")
+        }
+
+        return (
+            num,
+            sha,
+            state,
+            title,
+            draft,
+            merged_at,
+            pr_base,
+            labels,
+            review_requests,
+            latest_reviews,
+            body,
+        )
 
     # Fallback for branches not in the cache
     base = detect_base_repo()
     if not base:
-        return "", "", "", "", False, "", None
+        return "", "", "", "", False, "", None, [], [], {}, ""
     base_owner, base_repo = base
 
     headers = {"Accept": "application/vnd.github+json"}
@@ -318,21 +366,7 @@ def _find_pr_for_ref(ref: str) -> tuple[str, str, str, str, bool, str, tuple[str
         repository(owner: $owner, name: $repo) {
           pullRequests(headRefName: $headRefName, states: [OPEN, CLOSED, MERGED], first: 1, orderBy: {field: CREATED_AT, direction: DESC}) {
             nodes {
-                url,
-                number,
-                state,
-                title,
-                isDraft,
-                mergedAt,
-                headRefName,
-                headRepository {
-                  nameWithOwner
-                },
-                headRefOid,
-                baseRepository {
-                    owner { login },
-                    name
-                }
+                ...pr_fields
             }
           }
         }
@@ -344,11 +378,84 @@ def _find_pr_for_ref(ref: str) -> tuple[str, str, str, str, bool, str, tuple[str
     try:
         r = _requests_post(url, headers=headers, json={"query": query, "variables": variables})
         if not r.ok:
-            return "", "", "", "", False, "", None
+            return "", "", "", "", False, "", None, [], [], {}, ""
         data = r.json()
         nodes = data.get("data", {}).get("repository", {}).get("pullRequests", {}).get("nodes", [])
         if not nodes:
-            return "", "", "", "", False, "", None
+            return "", "", "", "", False, "", None, [], [], {}, ""
+
+        pr = nodes[0]
+        num = str(pr.get("number", ""))
+        title = pr.get("title", "")
+        sha = pr.get("headRefOid", "")
+        state = pr.get("state", "open").lower()
+        draft = bool(pr.get("isDraft", False))
+        merged_at = pr.get("mergedAt") or ""
+        body = pr.get("body", "")
+        if state == "merged":
+            state = "closed"
+
+        pr_base_owner = pr.get("baseRepository", {}).get("owner", {}).get("login", "")
+        pr_base_repo = pr.get("baseRepository", {}).get("name", "")
+        pr_base = (pr_base_owner, pr_base_repo) if pr_base_owner and pr_base_repo else None
+
+        labels = [label["name"] for label in pr.get("labels", {}).get("nodes", [])]
+        review_requests = [
+            req["requestedReviewer"].get("login") or req["requestedReviewer"].get("name")
+            for req in pr.get("reviewRequests", {}).get("nodes", [])
+            if req.get("requestedReviewer")
+        ]
+        latest_reviews = {
+            review["author"]["login"]: review["state"]
+            for review in pr.get("latestReviews", {}).get("nodes", [])
+            if review.get("author")
+        }
+
+        return (
+            num,
+            sha,
+            state,
+            title,
+            draft,
+            merged_at,
+            pr_base,
+            labels,
+            review_requests,
+            latest_reviews,
+            body,
+        )
+    except Exception:
+        pass
+    return "", "", "", "", False, "", None, [], [], {}, ""
+    base_owner, base_repo = base
+
+    headers = {"Accept": "application/vnd.github+json"}
+    tok = _github_token()
+    if tok:
+        headers["Authorization"] = f"Bearer {tok}"
+
+    query = """
+    query PullRequestForBranch($owner: String!, $repo: String!, $headRefName: String!) {
+        repository(owner: $owner, name: $repo) {
+          pullRequests(headRefName: $headRefName, states: [OPEN, CLOSED, MERGED], first: 1, orderBy: {field: CREATED_AT, direction: DESC}) {
+            nodes {
+                ...pr_fields
+            }
+          }
+        }
+    }
+    """
+    variables = {"owner": base_owner, "repo": base_repo, "headRefName": branch_name}
+    url = "https://api.github.com/graphql"
+
+    try:
+        r = _requests_post(url, headers=headers, json={"query": query, "variables": variables})
+        if not r.ok:
+            return "", "", "", "", False, "", None, [], [], {}
+        data = r.json()
+        nodes = data.get("data", {}).get("repository", {}).get("pullRequests", {}).get("nodes", [])
+        if not nodes:
+            return "", "", "", "", False, "", None, [], [], {}
 
         pr = nodes[0]
         num = str(pr.get("number", ""))
@@ -363,18 +470,54 @@ def _find_pr_for_ref(ref: str) -> tuple[str, str, str, str, bool, str, tuple[str
         pr_base_owner = pr.get("baseRepository", {}).get("owner", {}).get("login", "")
         pr_base_repo = pr.get("baseRepository", {}).get("name", "")
         pr_base = (pr_base_owner, pr_base_repo) if pr_base_owner and pr_base_repo else None
-        return num, sha, state, title, draft, merged_at, pr_base
+
+        labels = [label["name"] for label in pr.get("labels", {}).get("nodes", [])]
+        review_requests = [
+            req["requestedReviewer"].get("login") or req["requestedReviewer"].get("name")
+            for req in pr.get("reviewRequests", {}).get("nodes", [])
+            if req.get("requestedReviewer")
+        ]
+        latest_reviews = {
+            review["author"]["login"]: review["state"]
+            for review in pr.get("latestReviews", {}).get("nodes", [])
+            if review.get("author")
+        }
+
+        return (
+            num,
+            sha,
+            state,
+            title,
+            draft,
+            merged_at,
+            pr_base,
+            labels,
+            review_requests,
+            latest_reviews,
+        )
     except Exception:
         pass
-    return "", "", "", "", False, "", None
+    return "", "", "", "", False, "", None, [], [], {}
 
 
 def preview_branch(ref: str, no_color: bool = False) -> None:
     # Build the PR header, then show recent commits
-    from .render import setup_colors
+    from .render import format_pr_details, setup_colors, truncate_display
 
     colors = setup_colors(no_color=no_color)
-    pr_num, pr_sha, pr_state, pr_title, pr_draft, pr_merged_at, pr_base = _find_pr_for_ref(ref)
+    (
+        pr_num,
+        pr_sha,
+        pr_state,
+        pr_title,
+        pr_draft,
+        pr_merged_at,
+        pr_base,
+        labels,
+        review_requests,
+        latest_reviews,
+        body,
+    ) = _find_pr_for_ref(ref)
     if pr_num:
         if pr_state == "closed":
             if pr_merged_at:
@@ -394,6 +537,14 @@ def preview_branch(ref: str, no_color: bool = False) -> None:
         pr_url = f"https://github.com/{base_owner}/{base_repo}/pull/{pr_num}"
         pr_link = f"\x1b]8;;{pr_url}\x1b\\#{pr_num}\x1b]8;;\x1b\\"
         header = f"{pr_icon} {colors.italic_on}{pr_status}{colors.italic_off}  {pr_link}  {colors.bold}{pr_title}{colors.reset}\n"
+        details = format_pr_details(labels, review_requests, latest_reviews, colors)
+        if details:
+            header += details + "\n"
+
+        if body:
+            cols = int(os.environ.get("FZF_PREVIEW_COLUMNS", "80"))
+            header += "\n" + truncate_display(body, cols * 3) + "\n"
+
         sys.stdout.write(header)
         cols = int(os.environ.get("FZF_PREVIEW_COLUMNS", "80"))
         sys.stdout.write("─" * cols + "\n")
@@ -401,7 +552,7 @@ def preview_branch(ref: str, no_color: bool = False) -> None:
 
 
 def open_url_for_ref(ref: str) -> int:
-    pr_num, _sha, _state, _title, _draft, _merged_at, pr_base = _find_pr_for_ref(ref)
+    pr_num, _, _, _, _, _, pr_base, _, _, _, _ = _find_pr_for_ref(ref)
     if not pr_num or not pr_base:
         return 1
     base_owner, base_repo = pr_base
