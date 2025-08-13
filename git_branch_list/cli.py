@@ -129,7 +129,10 @@ def interactive(args: argparse.Namespace) -> int:
                 print("Error: No remotes configured", file=sys.stderr)
                 return 1
             header = f"Select remote branches to DELETE from {remote} (multi-select with TAB)"
-            preview_cmd = [exe, "-p", f"{remote}/{{2}}"]
+            preview_cmd = [exe]
+            if args.no_color:
+                preview_cmd.append("-C")
+            preview_cmd += ["-p", f"{remote}/{{2}}"]
             rows = _build_rows_remote(remote, limit, colors)
             selected = fzf_select(
                 rows, header=header, preview_cmd=preview_cmd, multi=True, extra_binds=None
@@ -150,7 +153,10 @@ def interactive(args: argparse.Namespace) -> int:
             return 0
         else:
             header = "Select local branches to DELETE (multi-select with TAB)"
-            preview_cmd = [exe, "-p", "{2}"]
+            preview_cmd = [exe]
+            if args.no_color:
+                preview_cmd.append("-C")
+            preview_cmd += ["-p", "{2}"]
             rows = _build_rows_local(False, limit, colors)
             # After deleting a branch inline, reload the list
             reload_cmd = f"{exe} --emit-local-rows" + (f" -n {limit}" if limit else "")
@@ -180,7 +186,10 @@ def interactive(args: argparse.Namespace) -> int:
             print("Error: No remotes configured", file=sys.stderr)
             return 1
         header = f"Remote branches from {remote} (ENTER=checkout, ESC=cancel)"
-        preview_cmd = [exe, "-p", f"{remote}/{{2}}"]
+        preview_cmd = [exe]
+        if args.no_color:
+            preview_cmd.append("-C")
+        preview_cmd += ["-p", f"{remote}/{{2}}"]
         rows = _build_rows_remote(remote, limit, colors)
         selected = fzf_select(
             rows,
@@ -216,7 +225,10 @@ def interactive(args: argparse.Namespace) -> int:
 
     # Local flow
     header = "Local branches (ENTER=checkout, ESC=cancel)"
-    preview_cmd = [exe, "-p", "{2}"]
+    preview_cmd = [exe]
+    if args.no_color:
+        preview_cmd.append("-C")
+    preview_cmd += ["-p", "{2}"]
     rows = _build_rows_local(args.show_status, limit, colors)
     # After deleting a branch inline, reload the list keeping flags consistent
     reload_parts: list[str] = [exe, "--emit-local-rows"]
@@ -274,7 +286,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.preview_ref:
                 ref = args.preview_ref
                 if ref:
-                    github.preview_branch(ref)
+                    github.preview_branch(ref, no_color=args.no_color)
                 return 0
             # emit rows for fzf reloads
             if args.emit_local_rows or args.emit_remote_rows:

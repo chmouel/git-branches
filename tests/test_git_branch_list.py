@@ -214,6 +214,88 @@ def test_local_checkout(monkeypatch):
     assert any(c[:2] == ["git", "checkout"] and c[-1] == "feature" for c in calls)
 
 
+def test_local_checkout_block_on_dirty(monkeypatch):
+    calls = []
+    monkeypatch.setattr(cli, "ensure_deps", lambda interactive=True: None)
+    monkeypatch.setattr(cli, "iter_local_branches", lambda limit: ["feature"])  # noqa: ARG005
+    monkeypatch.setattr(
+        cli,
+        "fzf_select",
+        lambda rows, header, preview_cmd, multi=False, extra_binds=None: ["feature"],
+    )  # noqa: ARG005
+    monkeypatch.setattr(cli, "_is_workdir_dirty", lambda: True)
+
+    def fake_run(cmd, cwd=None, check=True):  # noqa: ANN001, ARG001
+        calls.append(cmd)
+
+        class CP:
+            stdout = ""
+
+        return CP()
+
+    monkeypatch.setattr(cli, "run", fake_run)
+    args = cli.build_parser().parse_args([])
+    rc = cli.interactive(args)
+    assert rc == 1
+    assert not any(c[:2] == ["git", "checkout"] for c in calls)
+
+
+def test_remote_checkout_block_on_dirty_existing(monkeypatch):
+    calls = []
+    monkeypatch.setattr(cli, "ensure_deps", lambda interactive=True: None)
+    monkeypatch.setattr(cli, "iter_remote_branches", lambda remote, limit: ["feature"])  # noqa: ARG005
+    monkeypatch.setattr(
+        cli,
+        "fzf_select",
+        lambda rows, header, preview_cmd, multi=False, extra_binds=None: ["feature"],
+    )  # noqa: ARG005
+    monkeypatch.setattr(cli, "_is_workdir_dirty", lambda: True)
+
+    def fake_run(cmd, cwd=None, check=True):  # noqa: ANN001, ARG001
+        # Simulate that branch exists locally for show-ref check
+        class CP:
+            stdout = ""
+
+        calls.append(cmd)
+        return CP()
+
+    monkeypatch.setattr(cli, "run", fake_run)
+    args = cli.build_parser().parse_args(["-r", "-R", "origin"])  # remote browse
+    rc = cli.interactive(args)
+    assert rc == 1
+    assert not any(c[:2] == ["git", "checkout"] for c in calls)
+
+
+def test_remote_checkout_block_on_dirty_create(monkeypatch):
+    calls = []
+    monkeypatch.setattr(cli, "ensure_deps", lambda interactive=True: None)
+    monkeypatch.setattr(cli, "iter_remote_branches", lambda remote, limit: ["feature"])  # noqa: ARG005
+    monkeypatch.setattr(
+        cli,
+        "fzf_select",
+        lambda rows, header, preview_cmd, multi=False, extra_binds=None: ["feature"],
+    )  # noqa: ARG005
+    monkeypatch.setattr(cli, "_is_workdir_dirty", lambda: True)
+
+    def fake_run(cmd, cwd=None, check=True):  # noqa: ANN001, ARG001
+        # Make show-ref fail to force the create-tracking path
+        if cmd[:2] == ["git", "show-ref"]:
+            raise Exception("not found")
+
+        class CP:
+            stdout = ""
+
+        calls.append(cmd)
+        return CP()
+
+    monkeypatch.setattr(cli, "run", fake_run)
+    args = cli.build_parser().parse_args(["-r", "-R", "origin"])  # remote browse
+    rc = cli.interactive(args)
+    assert rc == 1
+    # Ensure no checkout -b happened
+    assert not any(c[:3] == ["git", "checkout", "-b"] for c in calls)
+
+
 def test_commit_status_icon(monkeypatch):
     colors = render.Colors()
 

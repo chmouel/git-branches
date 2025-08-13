@@ -6,6 +6,42 @@ from datetime import datetime
 from .git_ops import run
 
 
+def _osc8(url: str, text: str) -> str:
+    return f"\x1b]8;;{url}\x1b\\{text}\x1b]8;;\x1b\\"
+
+
+def _detect_github_owner_repo() -> tuple[str, str] | None:
+    """Best-effort detect GitHub owner/repo from remotes.
+
+    Avoids importing github module to prevent cycles. Returns None on failure.
+    """
+    try:
+        cp = run(["git", "remote"])
+        remotes = [r.strip() for r in cp.stdout.splitlines() if r.strip()]
+    except Exception:
+        remotes = []
+    for cand in ("upstream", "origin"):
+        if cand in remotes:
+            try:
+                url = run(["git", "remote", "get-url", cand]).stdout.strip()
+            except Exception:
+                continue
+            owner_repo = ""
+            if url.startswith("git@github.com:"):
+                owner_repo = url.removeprefix("git@github.com:")
+            elif url.startswith("https://github.com/"):
+                owner_repo = url.removeprefix("https://github.com/")
+            elif url.startswith("ssh://git@github.com/"):
+                owner_repo = url.removeprefix("ssh://git@github.com/")
+            else:
+                continue
+            owner_repo = owner_repo.removesuffix(".git")
+            if "/" in owner_repo:
+                owner, repo = owner_repo.split("/", 1)
+                return owner, repo
+    return None
+
+
 @dataclass
 class Colors:
     local: str = ""
@@ -141,16 +177,24 @@ def format_branch_info(
     status: str = "",
 ) -> str:
     try:
-        cp = run(["git", "log", "--no-walk=unsorted", "--format=%ct|%h|%s", full_ref], check=True)
+        cp = run(
+            ["git", "log", "--no-walk=unsorted", "--format=%ct|%H|%h|%s", full_ref],
+            check=True,
+        )
         line = cp.stdout.strip().splitlines()[0] if cp.stdout.strip() else ""
     except Exception:
         line = ""
 
-    commit_date, commit_hash, commit_subject = "0", "", branch
+    commit_date, commit_hash_full, commit_hash_short, commit_subject = "0", "", "", branch
     if line:
-        parts = line.split("|", 3)
-        if len(parts) >= 3:
-            commit_date, commit_hash, commit_subject = parts[0], parts[1], parts[2]
+        parts = line.split("|", 4)
+        if len(parts) >= 4:
+            commit_date, commit_hash_full, commit_hash_short, commit_subject = (
+                parts[0],
+                parts[1],
+                parts[2],
+                parts[3],
+            )
 
     if commit_date and commit_date != "0":
         try:
@@ -187,9 +231,19 @@ def format_branch_info(
         # It's a bit tricky, so we'll just add a buffer
         subject = truncate_display(subject, available - 15)
 
+    # Make commit hash clickable if we can detect GitHub base and colors enabled
+    link_hash = commit_hash_short
+    base = None if not colors.reset else _detect_github_owner_repo()
+    if base and commit_hash_full and colors.reset:
+        owner, repo = base
+        url = f"https://github.com/{owner}/{repo}/commit/{commit_hash_full}"
+        link_hash = _osc8(url, f"{colors.commit}{commit_hash_short:<{hash_width}}{colors.reset}")
+    else:
+        link_hash = f"{colors.commit}{commit_hash_short:<{hash_width}}{colors.reset}"
+
     return (
         f"{icon} {branch_color}{display_branch:<{branch_width}}{colors.reset} "
-        f"{colors.commit}{commit_hash:<{hash_width}}{colors.reset} "
+        f"{link_hash} "
         f"{colors.date}{formatted_date:>{date_width}}{colors.reset} "
         f"{status_str}{subject}"
     )
@@ -197,18 +251,25 @@ def format_branch_info(
 
 def git_log_oneline(ref: str, n: int = 10, colors: Colors | None = None) -> str:
     try:
-        cp = run(["git", "log", "--oneline", f"-{n}", ref])
         if not colors:
+            # Preserve original behavior when caller wants raw colored output
             cp_color = run(["git", "log", "--oneline", f"-{n}", "--color=always", ref])
             return cp_color.stdout
-        output = []
+        # Use full and short SHAs to build clickable links
+        cp = run(["git", "log", f"-{n}", "--format=%H %h %s", ref])
+        base = None if not colors.reset else _detect_github_owner_repo()
+        output: list[str] = []
         for line in cp.stdout.splitlines():
-            parts = line.split(" ", 1)
-            if len(parts) == 2:
-                sha, subject = parts
-                colored_sha = f"{colors.commit}{sha}{colors.reset}"
+            parts = line.split(" ", 2)
+            if len(parts) == 3:
+                full, short, subject = parts
+                sha_text = f"{colors.commit}{short}{colors.reset}"
+                if base and colors.reset:
+                    owner, repo = base
+                    url = f"https://github.com/{owner}/{repo}/commit/{full}"
+                    sha_text = _osc8(url, sha_text)
                 highlighted_subject = highlight_subject(subject, colors)
-                output.append(f"{colored_sha} {highlighted_subject}")
+                output.append(f"{sha_text} {highlighted_subject}")
             else:
                 output.append(line)
         return "\n".join(output)

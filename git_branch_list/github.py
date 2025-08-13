@@ -196,11 +196,11 @@ def _find_pr_for_ref(ref: str) -> tuple[str, str, str, str, bool, str, tuple[str
     return "", "", "", "", False, "", None
 
 
-def preview_branch(ref: str) -> None:
+def preview_branch(ref: str, no_color: bool = False) -> None:
     # Build the PR header, then show recent commits
     from .render import setup_colors
 
-    colors = setup_colors(no_color=False)
+    colors = setup_colors(no_color=no_color)
     pr_num, pr_sha, pr_state, pr_title, pr_draft, pr_merged_at, pr_base = _find_pr_for_ref(ref)
     if pr_num:
         if pr_state == "closed":
