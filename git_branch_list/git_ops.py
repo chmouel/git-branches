@@ -81,6 +81,8 @@ def iter_remote_branches(remote: str, limit: int | None) -> Iterable[str]:
         if not branch.startswith(f"{remote}/"):
             continue
         name = branch[len(remote) + 1 :]
+        if "->" in name:
+            continue
         if name == "HEAD":
             continue
         out.append(name)
