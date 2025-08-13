@@ -48,7 +48,7 @@ git-branches --checks
 
 ## Installation 🍺
 
-### [UV](https://docs.astral.sh/uv/getting-started/installation/):
+### [UV](https://docs.astral.sh/uv/getting-started/installation/)
 
   ```bash
   uv tool install git-branches
