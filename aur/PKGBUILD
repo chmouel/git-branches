@@ -14,9 +14,13 @@ md5sums=('SKIP')
 
 pkgver() {
   cd "${srcdir}/git-branches"
-  # Prefer tag-based version; fallback to commit count
-  (git describe --tags --long 2>/dev/null | sed 's/^v//;s/-/./g') \
-    || echo "0.1.0.r$(git rev-list --count HEAD).g$(git rev-parse --short HEAD)"
+  # Prefer tag-based version; ensure non-empty and sanitized
+  _desc=$(git describe --tags --long 2>/dev/null || true)
+  if [[ -n "${_desc}" ]]; then
+    echo "${_desc#v}" | sed 's/-/./g'
+  else
+    echo "0.1.0.r$(git rev-list --count HEAD).g$(git rev-parse --short HEAD)"
+  fi
 }
 
 build() {
@@ -39,4 +43,3 @@ package() {
   install -Dm644 README.md "$pkgdir/usr/share/doc/${pkgname}/README.md"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/${pkgname}/LICENSE"
 }
-
