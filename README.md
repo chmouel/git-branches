@@ -48,15 +48,13 @@ git-branches --checks
 
 ## Installation 🍺
 
-- Local dev via uv
-  - `make install`
-  - `make run` (or pass flags with `ARGS="..."`)
+### [UV](https://docs.astral.sh/uv/getting-started/installation/):
 
-- System-wide (optional)
-  - From this directory: `uv tool install .`
-  - Then invoke the console script: `git-branches`
+  ```bash
+  uv tool install git-branches
+  ```
 
-### Homebrew (Tap)
+### [Homebrew](https://brew.sh/) (Tap)
 
 You can install via a Homebrew tap that ships a Formula for `git-branches`.
 
