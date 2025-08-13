@@ -67,7 +67,7 @@ def test_preview_header_variants(monkeypatch, capsys):
         )
         monkeypatch.setattr(github, "_commit_status_icon", lambda base, sha, colors: "[CI]")
         monkeypatch.setattr(github, "detect_base_repo", lambda: ("owner", "repo"))
-        monkeypatch.setattr(github, "git_log_oneline", lambda ref, n=10: "LOG\n")
+        monkeypatch.setattr(github, "git_log_oneline", lambda ref, n=10, colors=None: "LOG\n")
         github.preview_branch("feature/x")
         s = capsys.readouterr().out
         assert "#123" in s

@@ -142,7 +142,7 @@ def interactive(args: argparse.Namespace) -> int:
             rows = _build_rows_local(False, limit, colors)
             binds = [
                 f"ctrl-o:execute-silent({exe} -o {{2}})",
-                f"alt-k:execute({exe} --delete-one {{2}})",
+                f"alt-k:execute(gum confirm 'Delete {{2}}?' && {exe} --delete-one {{2}})",
             ]
             selected = fzf_select(
                 rows, header=header, preview_cmd=preview_cmd, multi=True, extra_binds=binds
@@ -192,7 +192,10 @@ def interactive(args: argparse.Namespace) -> int:
     header = "Local branches (ENTER=checkout, ESC=cancel)"
     preview_cmd = [exe, "-p", "{2}"]
     rows = _build_rows_local(args.show_status, limit, colors)
-    binds = [f"ctrl-o:execute-silent({exe} -o {{2}})", f"alt-k:execute({exe} --delete-one {{2}})"]
+    binds = [
+        f"ctrl-o:execute-silent({exe} -o {{2}})",
+        f"alt-k:execute(gum confirm 'Delete {{2}}?' && {exe} --delete-one {{2}})",
+    ]
     selected = fzf_select(
         rows, header=header, preview_cmd=preview_cmd, multi=False, extra_binds=binds
     )

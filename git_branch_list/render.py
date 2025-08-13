@@ -20,6 +20,18 @@ class Colors:
     bold: str = ""
     italic_on: str = ""
     italic_off: str = ""
+    feat: str = ""
+    fix: str = ""
+    chore: str = ""
+    docs: str = ""
+    refactor: str = ""
+    test: str = ""
+    perf: str = ""
+    style: str = ""
+    build: str = ""
+    ci: str = ""
+    revert: str = ""
+    magenta: str = ""
 
 
 def get_git_color(name: str, fallback: str = "normal") -> str:
@@ -58,7 +70,44 @@ def setup_colors(no_color: bool) -> Colors:
         bold=bold,
         italic_on=italic_on,
         italic_off=italic_off,
+        feat="\x1b[32m",  # green
+        fix="\x1b[31m",  # red
+        chore="\x1b[34m",  # blue
+        docs="\x1b[36m",  # cyan
+        refactor="\x1b[35m",  # magenta
+        test="\x1b[33m",  # yellow
+        perf="\x1b[36m",  # cyan
+        style="\x1b[37m",  # white
+        build="\x1b[34m",  # blue
+        ci="\x1b[35m",  # magenta
+        revert="\x1b[31m",  # red
+        magenta="\x1b[35m",  # magenta
     )
+
+
+def highlight_commit_type(msg: str, colors: Colors) -> str:
+    import re
+
+    replacements = {
+        "feat": colors.feat,
+        "fix": colors.fix,
+        "chore": colors.chore,
+        "docs": colors.docs,
+        "refactor": colors.refactor,
+        "test": colors.test,
+        "perf": colors.perf,
+        "style": colors.style,
+        "build": colors.build,
+        "ci": colors.ci,
+        "revert": colors.revert,
+    }
+    for keyword, color in replacements.items():
+        msg = re.sub(
+            rf"^(\w+\s+)({keyword})(\(.*\))?:(.*)",
+            rf"\1{color}\2\3{colors.reset}:\4",
+            msg,
+        )
+    return msg
 
 
 def truncate_display(text: str, width: int) -> str:
@@ -112,9 +161,14 @@ def format_branch_info(
     )
 
 
-def git_log_oneline(ref: str, n: int = 10) -> str:
+def git_log_oneline(ref: str, n: int = 10, colors: Colors | None = None) -> str:
     try:
-        cp = run(["git", "log", "--oneline", f"-{n}", "--color=always", ref])
-        return cp.stdout
+        cp = run(["git", "log", "--oneline", f"-{n}", ref])
+        if not colors:
+            return cp.stdout
+        output = []
+        for line in cp.stdout.splitlines():
+            output.append(highlight_commit_type(line, colors))
+        return "\n".join(output)
     except Exception:
         return ""
