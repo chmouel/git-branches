@@ -73,7 +73,6 @@ def test_preview_header_variants(monkeypatch, capsys):
                 ("owner", "repo"),
             ),
         )
-        monkeypatch.setattr(github, "_commit_status_icon", lambda base, sha, colors: "[CI]")
         monkeypatch.setattr(github, "git_log_oneline", lambda ref, n=10, colors=None: "LOG\n")
         github.preview_branch("feature/x")
         s = capsys.readouterr().out
@@ -348,31 +347,3 @@ def test_remote_checkout_block_on_dirty_create(monkeypatch):
     assert rc == 1
     # Ensure no checkout -b happened
     assert not any(c[:3] == ["git", "checkout", "-b"] for c in calls)
-
-
-def test_commit_status_icon(monkeypatch):
-    colors = render.Colors()
-
-    class RespOK:
-        ok = True
-
-        def __init__(self, state):
-            self._state = state
-
-        def json(self):
-            return {"state": self._state}
-
-    monkeypatch.setattr(
-        github, "_requests_get", lambda url, headers, timeout=3.0: RespOK("success")
-    )
-    assert "" in github._commit_status_icon(("o", "r"), "dead", colors)
-    monkeypatch.setattr(
-        github, "_requests_get", lambda url, headers, timeout=3.0: RespOK("failure")
-    )
-    assert "" in github._commit_status_icon(("o", "r"), "dead", colors)
-    monkeypatch.setattr(
-        github, "_requests_get", lambda url, headers, timeout=3.0: RespOK("pending")
-    )
-    assert "" in github._commit_status_icon(("o", "r"), "dead", colors)
-    monkeypatch.setattr(github, "_requests_get", lambda url, headers, timeout=3.0: RespOK("weird"))
-    assert "" in github._commit_status_icon(("o", "r"), "dead", colors)

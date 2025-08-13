@@ -120,32 +120,6 @@ def get_branch_pushed_status(base: tuple[str, str] | None, branch: str) -> str:
     return "\x1b[33m\x1b[0m"
 
 
-def _commit_status_icon(base: tuple[str, str] | None, sha: str, colors: Colors) -> str:
-    if not sha or not base:
-        return ""
-    owner, repo = base
-    url = f"https://api.github.com/repos/{owner}/{repo}/commits/{sha}/status"
-    headers: dict[str, str] = {}
-    tok = _github_token()
-    if tok:
-        headers["Authorization"] = f"Bearer {tok}"
-    state = "unknown"
-    try:
-        r = _requests_get(url, headers=headers)
-        if r.ok:
-            data = r.json()
-            state = data.get("state", "unknown")
-    except Exception:
-        state = "unknown"
-    if state == "success":
-        return f"{colors.green}{colors.reset}"
-    if state in ("failure", "error"):
-        return f"{colors.red}{colors.reset}"
-    if state == "pending":
-        return f"{colors.yellow}{colors.reset}"
-    return ""
-
-
 def _find_pr_for_ref(ref: str) -> tuple[str, str, str, str, bool, str, tuple[str, str] | None]:
     base = detect_base_repo()
     if not base:
@@ -248,8 +222,7 @@ def preview_branch(ref: str, no_color: bool = False) -> None:
         base_owner, base_repo = pr_base if pr_base else ("", "")
         pr_url = f"https://github.com/{base_owner}/{base_repo}/pull/{pr_num}"
         pr_link = f"\x1b]8;;{pr_url}\x1b\\#{pr_num}\x1b]8;;\x1b\\"
-        ci_icon = _commit_status_icon(pr_base, pr_sha, colors)
-        header = f"{pr_icon} {colors.italic_on}{pr_status}{colors.italic_off}  {pr_link}  {ci_icon}  {colors.bold}{pr_title}{colors.reset}\n"
+        header = f"{pr_icon} {colors.italic_on}{pr_status}{colors.italic_off}  {pr_link}  {colors.bold}{pr_title}{colors.reset}\n"
         sys.stdout.write(header)
         cols = int(os.environ.get("FZF_PREVIEW_COLUMNS", "80"))
         sys.stdout.write("─" * cols + "\n")

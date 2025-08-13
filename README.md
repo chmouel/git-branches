@@ -87,7 +87,6 @@ source /path/to/contrib/git-branches.bash
 
 Replace `/path/to/contrib/git-branches.bash` with the correct path to the script.
 
-
 ## How it works
 
 - Uses git for data (branch lists, recent commits) and fzf for the UI.
