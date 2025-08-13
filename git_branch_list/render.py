@@ -199,7 +199,20 @@ def format_branch_info(
 
 def git_log_oneline(ref: str, n: int = 10, colors: Colors | None = None) -> str:
     try:
-        cp = run(["git", "log", "--oneline", f"-{n}", "--color=always", ref])
-        return cp.stdout
+        cp = run(["git", "log", "--oneline", f"-{n}", ref])
+        if not colors:
+            cp_color = run(["git", "log", "--oneline", f"-{n}", "--color=always", ref])
+            return cp_color.stdout
+        output = []
+        for line in cp.stdout.splitlines():
+            parts = line.split(" ", 1)
+            if len(parts) == 2:
+                sha, subject = parts
+                colored_sha = f"{colors.commit}{sha}{colors.reset}"
+                highlighted_subject = highlight_subject(subject, colors)
+                output.append(f"{colored_sha} {highlighted_subject}")
+            else:
+                output.append(line)
+        return "\n".join(output)
     except Exception:
         return ""
