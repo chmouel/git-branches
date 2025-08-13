@@ -7,9 +7,11 @@ import sys
 from . import github
 from .fzf_ui import confirm, fzf_select, select_remote
 from .git_ops import (
+    build_last_commit_cache_for_refs,
     ensure_deps,
     ensure_git_repo,
     get_current_branch,
+    get_last_commit_from_cache,
     iter_local_branches,
     iter_remote_branches,
     remote_ssh_url,
@@ -64,6 +66,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("-C", action="store_true", dest="no_color", help="Disable colors")
     p.add_argument("-l", action="store_true", dest="list_only", help="List mode only (no checkout)")
+    # Removed flags: --offline, --prefetch-details (env-only toggles remain)
+    p.add_argument(
+        "--checks",
+        action="store_true",
+        dest="checks",
+        help="Fetch and show GitHub Actions status",
+    )
+    # Removed flag: --no-cache (env-only toggle remains)
+    p.add_argument(
+        "--refresh",
+        action="store_true",
+        dest="refresh",
+        help="Force refresh PR cache (ignore ETag)",
+    )
     p.add_argument("-h", action="help", help="Show this help")
     p.add_argument("-o", dest="open_ref", metavar="REF", help=argparse.SUPPRESS)
     p.add_argument("-p", dest="preview_ref", metavar="REF", help=argparse.SUPPRESS)
@@ -94,9 +110,32 @@ def _build_rows_local(
     base = github.detect_base_repo()
     github._fetch_prs_and_populate_cache()
     maxw = os.get_terminal_size().columns if sys.stdout.isatty() else 120
-    for b in iter_local_branches(limit):
+    branches = list(iter_local_branches(limit))
+    # Optional PR detail prefetch for preview performance
+    if os.environ.get("GIT_BRANCHES_PREFETCH_DETAILS") in ("1", "true", "yes"):
+        github.prefetch_pr_details(branches)
+    # Preload commit info cache with a single for-each-ref call
+    build_last_commit_cache_for_refs([f"refs/heads/{b}" for b in branches])
+    # Optionally prefetch Actions status for these SHAs if checks are enabled
+    if github._checks_enabled():  # noqa: SLF001
+        shas: list[str] = []
+        for b in branches:
+            info = get_last_commit_from_cache(b)
+            if info:
+                shas.append(info[1])  # full sha
+        github.prefetch_actions_for_shas(base, shas)
+    for b in branches:
         is_current = b == current
         status = github.get_pr_status_from_cache(b, colors)
+        # Append cached Actions status icon if available (no network)
+        info = get_last_commit_from_cache(b)
+        if info:
+            act = github.peek_actions_status_for_sha(info[1])
+            if act:
+                icon, _ = github._actions_status_icon(  # noqa: SLF001
+                    act.get("conclusion"), act.get("status"), colors
+                )
+                status = f"{status} {icon}" if status else icon
         if not status and show_status:
             status = github.get_branch_pushed_status(base, b)
         row = format_branch_info(b, b, is_current, colors, maxw, status=status)
@@ -108,8 +147,29 @@ def _build_rows_remote(remote: str, limit: int | None, colors: Colors) -> list[t
     rows: list[tuple[str, str]] = []
     github._fetch_prs_and_populate_cache()
     maxw = os.get_terminal_size().columns if sys.stdout.isatty() else 120
-    for b in iter_remote_branches(remote, limit):
+    branches = list(iter_remote_branches(remote, limit))
+    if os.environ.get("GIT_BRANCHES_PREFETCH_DETAILS") in ("1", "true", "yes"):
+        github.prefetch_pr_details([f"{remote}/{b}" for b in branches])
+    # Preload commit info cache for remote refs
+    build_last_commit_cache_for_refs([f"refs/remotes/{remote}/{b}" for b in branches])
+    if github._checks_enabled():  # noqa: SLF001
+        shas: list[str] = []
+        for b in branches:
+            info = get_last_commit_from_cache(f"{remote}/{b}")
+            if info:
+                shas.append(info[1])
+        github.prefetch_actions_for_shas(github.detect_base_repo(), shas)
+    for b in branches:
         status = github.get_pr_status_from_cache(b, colors)
+        # Append cached Actions status icon if available (no network)
+        info = get_last_commit_from_cache(f"{remote}/{b}")
+        if info:
+            act = github.peek_actions_status_for_sha(info[1])
+            if act:
+                icon, _ = github._actions_status_icon(  # noqa: SLF001
+                    act.get("conclusion"), act.get("status"), colors
+                )
+                status = f"{status} {icon}" if status else icon
         row = format_branch_info(b, f"{remote}/{b}", False, colors, maxw, status=status)
         rows.append((row, b))
     return rows
@@ -276,6 +336,11 @@ def _is_workdir_dirty() -> bool:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        # Flags removed; env vars can still be set by the user
+        if args.refresh:
+            os.environ["GIT_BRANCHES_REFRESH"] = "1"
+        if args.checks:
+            os.environ["GIT_BRANCHES_SHOW_CHECKS"] = "1"
         if (
             args.preview_ref
             or args.open_ref
@@ -284,6 +349,7 @@ def main(argv: list[str] | None = None) -> int:
             or args.emit_remote_rows
         ):
             ensure_git_repo(required=True)
+            # Prefetch-details is env-only now (GIT_BRANCHES_PREFETCH_DETAILS)
             if args.open_ref:
                 return github.open_url_for_ref(args.open_ref)
             if args.preview_ref:

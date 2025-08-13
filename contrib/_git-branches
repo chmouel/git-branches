@@ -16,6 +16,8 @@ _git_branches() {
         '-n[Limit to first NUM branches]:number:' \
         '-C[Disable colors]' \
         '(*-d *-D)-l[List mode only (no checkout)]' \
+        '--refresh[Force refresh PR cache (ignore ETag)]' \
+        '--checks[Fetch and show GitHub Actions status]' \
         '-h[Show this help]' \
         '*--help[Show this help]' && ret=0
 

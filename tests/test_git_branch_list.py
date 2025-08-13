@@ -30,13 +30,27 @@ def test_detect_github_repo(monkeypatch):
 
 def test_parser_flags():
     p = cli.build_parser()
-    ns = p.parse_args(["-r", "-d", "-s", "-n", "5", "-C", "-l"])  # noqa: F841
+    ns = p.parse_args(
+        [
+            "-r",
+            "-d",
+            "-s",
+            "-n",
+            "5",
+            "-C",
+            "-l",
+            "--refresh",
+            "--checks",
+        ]
+    )  # noqa: F841
     assert ns.remote_mode
     assert ns.delete_local
     assert ns.show_status
     assert ns.limit == 5
     assert ns.no_color
     assert ns.list_only
+    assert ns.refresh
+    assert ns.checks
 
 
 def test_branch_pushed_status_icons(monkeypatch):

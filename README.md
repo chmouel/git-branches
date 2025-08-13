@@ -56,6 +56,8 @@ An interactive Git branch browser powered by fzf, with rich previews for GitHub 
 - `-S`: With `-s`, disable default limit (show all)
 - `-C`: Disable colors
 - `-l`: List-only mode (no checkout)
+- `--refresh`: Force refresh of PR cache (ignore stale cache and ETag)
+- `--checks`: Fetch and show GitHub Actions status (preview and a small indicator in rows). Without this flag, cached results (if available) are still displayed, but no network calls are made for checks.
 
 ## Key bindings (fzf)
 
@@ -64,28 +66,39 @@ An interactive Git branch browser powered by fzf, with rich previews for GitHub 
 
 ## Shell Completion
 
+Supported shells and scripts under `contrib/`:
+
+- Zsh: `_git-branches`
+- Bash: `git-branches.bash`
+- Fish: `git-branches.fish`
+
 ### Zsh
 
-To get command-line completion for `git-branches`, you can source the completion script in your `.zshrc`:
+Add the `contrib` directory to your `fpath` in `.zshrc` and re-init completions:
 
 ```zsh
-# Add this to your .zshrc
 fpath+=($PWD/contrib)
 autoload -U compinit && compinit
 ```
 
-Make sure to replace `$PWD/contrib` with the actual path to where you've cloned this repository. After adding this, restart your shell or run `source ~/.zshrc`.
+Use the absolute path to your clone instead of `$PWD` in your dotfiles.
 
 ### Bash
 
-For Bash, you can source the script in your `.bashrc` or `.bash_profile`:
+Source the completion script from your `.bashrc` or `.bash_profile`:
 
 ```bash
-# Add this to your .bashrc or .bash_profile
-source /path/to/contrib/git-branches.bash
+source /absolute/path/to/contrib/git-branches.bash
 ```
 
-Replace `/path/to/contrib/git-branches.bash` with the correct path to the script.
+### Fish
+
+Copy or symlink the Fish completion to your user completions directory:
+
+```fish
+mkdir -p ~/.config/fish/completions
+ln -sf /absolute/path/to/contrib/git-branches.fish ~/.config/fish/completions/git-branches.fish
+```
 
 ## How it works
 
@@ -93,15 +106,29 @@ Replace `/path/to/contrib/git-branches.bash` with the correct path to the script
 - Detects GitHub repository from the upstream of the current branch when possible, falling back to `origin` or the first remote.
 - For `-s` and preview CI status, calls the GitHub API with `Authorization: Bearer $GITHUB_TOKEN` when set.
 
-## Caching
+## Performance and Caching
 
-To improve performance and reduce API calls, `git-branches` caches pull request data locally.
+To improve performance and reduce API calls, `git-branches` batches git metadata and PR queries and caches PR data locally.
 
-- **What is cached**: The 30 most recently updated open PRs and the 30 most recently updated closed/merged PRs.
-- **Location**: The cache is stored in `~/.cache/git-branches/prs.json`.
-- **Duration**: The cache is valid for 5 minutes. After this time, it will be refreshed on the next run.
-- **Clearing the cache**: To force a refresh, you can delete the cache file: `rm ~/.cache/git-branches/prs.json`.
+- Git metadata: branches and last-commit info are fetched via a single `git for-each-ref` call.
+- PR list: fetched via REST in one call (`/pulls?state=open&per_page=100`) with ETag support; a small slice of recently closed PRs is also fetched to catch merges.
+- Disk cache: `~/.cache/git-branches/prs.json` with `timestamp`, `etag`, and a `{head.ref -> PR}` map. Default TTL: 5 minutes.
 
+Controls:
+
+- `GIT_BRANCHES_OFFLINE=1`: skip all GitHub API calls.
+- `GIT_BRANCHES_PREFETCH_DETAILS=1`: batch GraphQL for labels/reviews/body to make previews instant.
+- `GIT_BRANCHES_NO_CACHE=1`: ignore and do not write disk cache; do not use in-memory caches.
+- `--refresh` or `GIT_BRANCHES_REFRESH=1`: ignore existing cache and ETag this run, then write a fresh cache.
+
+## Environment Variables
+
+- `GIT_BRANCHES_OFFLINE=1`: Run fully offline (no GitHub requests).
+- `GIT_BRANCHES_NO_CACHE=1`: Bypass disk/memory caching and ETag.
+- `GIT_BRANCHES_REFRESH=1`: Force refresh of caches for this run.
+- `GIT_BRANCHES_PREFETCH_DETAILS=1`: Prefetch PR details (GraphQL batches).
+- `GIT_BRANCHES_SHOW_CHECKS=1`: Allow fetching Actions status (same as `--checks`). If unset, cached checks are still displayed; no fetches.
+- `GIT_BRANCHES_NO_PROGRESS=1`: Disable spinners/progress indicators.
 
 ## Troubleshooting
 

@@ -10,7 +10,7 @@ _git_branches_completion() {
     fi
 
     if [[ "$cur" == -* ]]; then
-        local opts="-r -R -d -D -s -n -S -C -l -h"
+        local opts="-r -R -d -D -s -n -S -C -l -h --refresh --checks"
         # Basic mutual exclusion
         if [[ " ${words[*]} " =~ " -r " ]]; then
             opts=${opts//-R/}

@@ -5,6 +5,10 @@ import subprocess
 import sys
 from collections.abc import Iterable
 
+# Lightweight cached commit metadata populated via a single for-each-ref scan
+# Keyed by the ref name used by callers (usually refname:short like 'branch' or 'origin/branch')
+_LAST_COMMIT_CACHE: dict[str, tuple[str, str, str, str]] = {}
+
 
 def which(cmd: str) -> bool:
     return shutil.which(cmd) is not None
@@ -89,6 +93,48 @@ def iter_remote_branches(remote: str, limit: int | None) -> Iterable[str]:
         if limit is not None and limit > 0 and len(out) >= limit:
             break
     return out
+
+
+def build_last_commit_cache_for_refs(
+    ref_patterns: list[str],
+) -> dict[str, tuple[str, str, str, str]]:
+    """Populate and return a cache of last commit info for given refs.
+
+    Uses a single `git for-each-ref` call to retrieve, for each ref pattern:
+    - refname:short (key)
+    - objectname (full sha)
+    - objectname:short (short sha)
+    - committerdate:unix (epoch seconds as string)
+    - subject (first line)
+
+    Returns a mapping: {ref_short: (epoch, full_sha, short_sha, subject)}
+    and also stores it in a module-level cache for reuse in this process.
+    """
+    if not ref_patterns:
+        return {}
+    try:
+        fmt = "%(refname:short)%00%(objectname)%00%(objectname:short)%00%(committerdate:unix)%00%(subject)"
+        cp = run(["git", "for-each-ref", f"--format={fmt}", *ref_patterns], check=True)
+        mapping: dict[str, tuple[str, str, str, str]] = {}
+        for line in cp.stdout.splitlines():
+            if not line:
+                continue
+            parts = line.split("\x00", 4)
+            if len(parts) < 5:
+                continue
+            ref_short, full_sha, short_sha, epoch, subject = parts
+            mapping[ref_short] = (epoch, full_sha, short_sha, subject)
+        # Store for reuse
+        _LAST_COMMIT_CACHE.update(mapping)
+        return mapping
+    except Exception:
+        # On any failure, leave cache untouched and return empty mapping
+        return {}
+
+
+def get_last_commit_from_cache(ref_short: str) -> tuple[str, str, str, str] | None:
+    """Return (epoch, full_sha, short_sha, subject) for ref if cached."""
+    return _LAST_COMMIT_CACHE.get(ref_short)
 
 
 def remote_ssh_url(remote: str) -> str:

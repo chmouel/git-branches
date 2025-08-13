@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from .git_ops import run
+from .git_ops import get_last_commit_from_cache, run
 
 
 def _osc8(url: str, text: str) -> str:
@@ -176,25 +176,29 @@ def format_branch_info(
     max_width: int,
     status: str = "",
 ) -> str:
-    try:
-        cp = run(
-            ["git", "log", "--no-walk=unsorted", "--format=%ct|%H|%h|%s", full_ref],
-            check=True,
-        )
-        line = cp.stdout.strip().splitlines()[0] if cp.stdout.strip() else ""
-    except Exception:
-        line = ""
-
-    commit_date, commit_hash_full, commit_hash_short, commit_subject = "0", "", "", branch
-    if line:
-        parts = line.split("|", 4)
-        if len(parts) >= 4:
-            commit_date, commit_hash_full, commit_hash_short, commit_subject = (
-                parts[0],
-                parts[1],
-                parts[2],
-                parts[3],
+    cached = get_last_commit_from_cache(full_ref)
+    if cached:
+        commit_date, commit_hash_full, commit_hash_short, commit_subject = cached
+    else:
+        try:
+            cp = run(
+                ["git", "log", "--no-walk=unsorted", "--format=%ct|%H|%h|%s", full_ref],
+                check=True,
             )
+            line = cp.stdout.strip().splitlines()[0] if cp.stdout.strip() else ""
+        except Exception:
+            line = ""
+
+        commit_date, commit_hash_full, commit_hash_short, commit_subject = "0", "", "", branch
+        if line:
+            parts = line.split("|", 4)
+            if len(parts) >= 4:
+                commit_date, commit_hash_full, commit_hash_short, commit_subject = (
+                    parts[0],
+                    parts[1],
+                    parts[2],
+                    parts[3],
+                )
 
     if commit_date and commit_date != "0":
         try:
