@@ -210,16 +210,16 @@ def interactive(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    if args.preview_ref or args.open_ref or args.delete_one:
-        ensure_git_repo(required=True)
-        if args.open_ref:
-            return github.open_url_for_ref(args.open_ref)
-        elif args.preview_ref:
-            ref = args.preview_ref
-            if ref:
-                github.preview_branch(ref)
-            return 0
-        else:
+    try:
+        if args.preview_ref or args.open_ref or args.delete_one:
+            ensure_git_repo(required=True)
+            if args.open_ref:
+                return github.open_url_for_ref(args.open_ref)
+            if args.preview_ref:
+                ref = args.preview_ref
+                if ref:
+                    github.preview_branch(ref)
+                return 0
             br = args.delete_one
             if not br:
                 return 1
@@ -228,4 +228,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             except Exception:
                 return 1
-    return interactive(args)
+        return interactive(args)
+    except KeyboardInterrupt:
+        print("\nCancelled by user.", file=sys.stderr)
+        return 130
