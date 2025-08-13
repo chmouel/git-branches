@@ -2,7 +2,7 @@ PROJECT_DIR := .
 UV := uv run --project $(PROJECT_DIR) --quiet
 PY_SRC := git_branch_list
 
-.PHONY: install format lint fix test check run dev ci
+.PHONY: install format lint fix test check run dev ci coverage clean
 
 install:
 	uv sync --project $(PROJECT_DIR) --extra dev
@@ -19,6 +19,9 @@ fix:
 test:
 	$(UV) pytest -q tests
 
+test-coverage:
+	$(UV) pytest tests --cov=$(PY_SRC) --cov-report=term-missing --cov-report=html
+
 check: lint test
 
 run:
@@ -33,3 +36,14 @@ dev:
 
 # CI-friendly aggregate target
 ci: install lint test format
+
+# Clean up generated files
+clean:
+	rm -rf build/
+	rm -rf dist/
+	rm -rf *.egg-info/
+	rm -rf htmlcov/
+	rm -rf .coverage
+	rm -rf .pytest_cache/
+	rm -rf __pycache__/
+	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
