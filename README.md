@@ -93,22 +93,6 @@ brew install --HEAD chmouel/git-branches/git-branches
 - `--refresh`: Force refresh of PR cache (ignore stale cache and ETag)
 - `--checks`: Fetch and show GitHub Actions status (preview and a small indicator in rows). Without this flag, cached results (if available) are still displayed, but no network calls are made for checks.
 
-## Icons legend 🔤
-
-- PR state:
-  - Open: `` (green)
-  - Draft: `` (yellow)
-  - Merged: `` (magenta)
-  - Closed: `` (red)
-- GitHub Actions:
-  - In progress: `` (yellow)
-  - Success: `` (green)
-  - Failed/Timed out: `` (red)
-  - Cancelled: `` (red)
-  - Skipped/Neutral: `` (cyan)
-
-Tip: Use a Nerd Font for best results. Without it, the text remains legible.
-
 ## Key bindings (fzf)
 
 - `ctrl-o`: Open the PR for the highlighted ref in the default browser
