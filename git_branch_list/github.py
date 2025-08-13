@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import os
 import sys
+import time
 import webbrowser
 
 from .git_ops import run, which
@@ -11,6 +13,12 @@ try:  # runtime-only via uv
     import requests  # type: ignore
 except Exception:  # pragma: no cover
     requests = None  # type: ignore
+
+
+CACHE_DIR = os.path.expanduser("~/.cache/git-branches")
+CACHE_FILE = os.path.join(CACHE_DIR, "prs.json")
+_pr_cache: dict[str, dict] = {}
+CACHE_DURATION_SECONDS = 300  # 5 minutes
 
 
 def detect_github_repo(remote: str) -> tuple[str, str] | None:
@@ -120,11 +128,152 @@ def get_branch_pushed_status(base: tuple[str, str] | None, branch: str) -> str:
     return "\x1b[33m\x1b[0m"
 
 
-def _find_pr_for_ref(ref: str) -> tuple[str, str, str, str, bool, str, tuple[str, str] | None]:
+def get_pr_status_from_cache(branch: str, colors: Colors) -> str:
+    if branch not in _pr_cache:
+        return ""
+    pr = _pr_cache[branch]
+    state = pr.get("state", "open").lower()
+    draft = bool(pr.get("isDraft", False))
+
+    if state == "merged":
+        return f"{colors.magenta}{colors.reset}"
+    if state == "closed":
+        return f"{colors.red}{colors.reset}"
+
+    if draft:
+        return f"{colors.yellow}{colors.reset}"
+    return f"{colors.green}{colors.reset}"
+
+
+def _fetch_prs_and_populate_cache() -> None:
+    global _pr_cache
+    if _pr_cache:
+        return
+
+    if os.path.exists(CACHE_FILE):
+        try:
+            with open(CACHE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if time.time() - data.get("timestamp", 0) < CACHE_DURATION_SECONDS:
+                _pr_cache = data.get("prs", {})
+                if _pr_cache:
+                    return
+        except (json.JSONDecodeError, IOError):
+            pass
+
     base = detect_base_repo()
     if not base:
-        return "", "", "", "", False, "", None
+        return
     base_owner, base_repo = base
+
+    headers = {"Accept": "application/vnd.github+json"}
+    tok = _github_token()
+    if tok:
+        headers["Authorization"] = f"Bearer {tok}"
+
+    query = """
+    query RepositoryPullRequests($owner: String!, $repo: String!) {
+        repository(owner: $owner, name: $repo) {
+          open: pullRequests(first: 30, states: [OPEN], orderBy: {field: UPDATED_AT, direction: DESC}) {
+            nodes { ...pr_fields }
+          }
+          closed: pullRequests(first: 30, states: [CLOSED, MERGED], orderBy: {field: UPDATED_AT, direction: DESC}) {
+            nodes { ...pr_fields }
+          }
+        }
+    }
+
+    fragment pr_fields on PullRequest {
+        url,
+        number,
+        state,
+        title,
+        isDraft,
+        mergedAt,
+        headRefName,
+        headRefOid,
+        baseRepository {
+            owner { login },
+            name
+        }
+    }
+    """
+    variables = {"owner": base_owner, "repo": base_repo}
+    url = "https://api.github.com/graphql"
+
+    try:
+        r = _requests_post(url, headers=headers, json={"query": query, "variables": variables})
+        if not r.ok:
+            return
+        data = r.json()
+        repo_data = data.get("data", {}).get("repository", {})
+        open_nodes = repo_data.get("open", {}).get("nodes", [])
+        closed_nodes = repo_data.get("closed", {}).get("nodes", [])
+        _pr_cache = {pr["headRefName"]: pr for pr in open_nodes + closed_nodes}
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        with open(CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump({"timestamp": time.time(), "prs": _pr_cache}, f)
+    except Exception:
+        pass
+
+    base = detect_base_repo()
+    if not base:
+        return
+    base_owner, base_repo = base
+
+    headers = {"Accept": "application/vnd.github+json"}
+    tok = _github_token()
+    if tok:
+        headers["Authorization"] = f"Bearer {tok}"
+
+    query = """
+    query RepositoryPullRequests($owner: String!, $repo: String!) {
+        repository(owner: $owner, name: $repo) {
+          open: pullRequests(first: 30, states: [OPEN], orderBy: {field: UPDATED_AT, direction: DESC}) {
+            nodes { ...pr_fields }
+          }
+          closed: pullRequests(first: 30, states: [CLOSED, MERGED], orderBy: {field: UPDATED_AT, direction: DESC}) {
+            nodes { ...pr_fields }
+          }
+        }
+    }
+
+    fragment pr_fields on PullRequest {
+        url,
+        number,
+        state,
+        title,
+        isDraft,
+        mergedAt,
+        headRefName,
+        headRefOid,
+        baseRepository {
+            owner { login },
+            name
+        }
+    }
+    """
+    variables = {"owner": base_owner, "repo": base_repo}
+    url = "https://api.github.com/graphql"
+
+    try:
+        r = _requests_post(url, headers=headers, json={"query": query, "variables": variables})
+        if not r.ok:
+            return
+        data = r.json()
+        repo_data = data.get("data", {}).get("repository", {})
+        open_nodes = repo_data.get("open", {}).get("nodes", [])
+        closed_nodes = repo_data.get("closed", {}).get("nodes", [])
+        _pr_cache = {pr["headRefName"]: pr for pr in open_nodes + closed_nodes}
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        with open(CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump({"timestamp": time.time(), "prs": _pr_cache}, f)
+    except Exception:
+        pass
+
+
+def _find_pr_for_ref(ref: str) -> tuple[str, str, str, str, bool, str, tuple[str, str] | None]:
+    _fetch_prs_and_populate_cache()
 
     branch_name = ref
     if "/" in ref:
@@ -136,6 +285,28 @@ def _find_pr_for_ref(ref: str) -> tuple[str, str, str, str, bool, str, tuple[str
                 branch_name = ref.split("/", 1)[1]
         except Exception:
             pass
+
+    pr = _pr_cache.get(branch_name)
+    if pr:
+        num = str(pr.get("number", ""))
+        title = pr.get("title", "")
+        sha = pr.get("headRefOid", "")
+        state = pr.get("state", "open").lower()
+        draft = bool(pr.get("isDraft", False))
+        merged_at = pr.get("mergedAt") or ""
+        if state == "merged":
+            state = "closed"
+
+        pr_base_owner = pr.get("baseRepository", {}).get("owner", {}).get("login", "")
+        pr_base_repo = pr.get("baseRepository", {}).get("name", "")
+        pr_base = (pr_base_owner, pr_base_repo) if pr_base_owner and pr_base_repo else None
+        return num, sha, state, title, draft, merged_at, pr_base
+
+    # Fallback for branches not in the cache
+    base = detect_base_repo()
+    if not base:
+        return "", "", "", "", False, "", None
+    base_owner, base_repo = base
 
     headers = {"Accept": "application/vnd.github+json"}
     tok = _github_token()

@@ -92,11 +92,12 @@ def _build_rows_local(
     current = get_current_branch()
     rows: list[tuple[str, str]] = []
     base = github.detect_base_repo()
+    github._fetch_prs_and_populate_cache()
     maxw = os.get_terminal_size().columns if sys.stdout.isatty() else 120
     for b in iter_local_branches(limit):
         is_current = b == current
-        status = ""
-        if show_status:
+        status = github.get_pr_status_from_cache(b, colors)
+        if not status and show_status:
             status = github.get_branch_pushed_status(base, b)
         row = format_branch_info(b, b, is_current, colors, maxw, status=status)
         rows.append((row, b))
@@ -105,9 +106,11 @@ def _build_rows_local(
 
 def _build_rows_remote(remote: str, limit: int | None, colors: Colors) -> list[tuple[str, str]]:
     rows: list[tuple[str, str]] = []
+    github._fetch_prs_and_populate_cache()
     maxw = os.get_terminal_size().columns if sys.stdout.isatty() else 120
     for b in iter_remote_branches(remote, limit):
-        row = format_branch_info(b, f"{remote}/{b}", False, colors, maxw)
+        status = github.get_pr_status_from_cache(b, colors)
+        row = format_branch_info(b, f"{remote}/{b}", False, colors, maxw, status=status)
         rows.append((row, b))
     return rows
 

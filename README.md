@@ -93,6 +93,16 @@ Replace `/path/to/contrib/git-branches.bash` with the correct path to the script
 - Detects GitHub repository from the upstream of the current branch when possible, falling back to `origin` or the first remote.
 - For `-s` and preview CI status, calls the GitHub API with `Authorization: Bearer $GITHUB_TOKEN` when set.
 
+## Caching
+
+To improve performance and reduce API calls, `git-branches` caches pull request data locally.
+
+- **What is cached**: The 30 most recently updated open PRs and the 30 most recently updated closed/merged PRs.
+- **Location**: The cache is stored in `~/.cache/git-branches/prs.json`.
+- **Duration**: The cache is valid for 5 minutes. After this time, it will be refreshed on the next run.
+- **Clearing the cache**: To force a refresh, you can delete the cache file: `rm ~/.cache/git-branches/prs.json`.
+
+
 ## Troubleshooting
 
 - “fzf not found”: Install fzf and ensure it’s on PATH (`brew install fzf`, `apt install fzf`, etc.).
