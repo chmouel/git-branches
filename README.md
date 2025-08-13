@@ -1,8 +1,8 @@
 # git-branches
 
+![PyPI - Version](https://img.shields.io/pypi/v/git-branches)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](#requirements)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-46A3FF)](https://docs.astral.sh/ruff/)
-[![Homebrew CI](https://github.com/chmouel/git-branches/actions/workflows/homebrew.yml/badge.svg)](https://github.com/chmouel/git-branches/actions/workflows/homebrew.yml)
 [![Pre-commit](https://github.com/chmouel/git-branches/actions/workflows/precommit.yml/badge.svg)](https://github.com/chmouel/git-branches/actions/workflows/precommit.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](../../LICENSE)
 
