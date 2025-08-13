@@ -2,7 +2,7 @@ PROJECT_DIR := .
 UV := uv run --project $(PROJECT_DIR) --quiet
 PY_SRC := git_branch_list
 
-.PHONY: install format lint fix test check run dev ci coverage clean
+.PHONY: install format lint fix test check run dev ci coverage clean brew-local
 
 install:
 	uv sync --project $(PROJECT_DIR) --extra dev
@@ -47,3 +47,15 @@ clean:
 	rm -rf .pytest_cache/
 	rm -rf __pycache__/
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+
+# Create a local Homebrew tap and install from the Formula (HEAD)
+# Usage: make brew-local [TAP=${USER}/git-branches-dev]
+brew-local:
+	@TAP=${TAP}; \
+	if [ -z "$$TAP" ]; then TAP="${USER}/git-branches-dev"; else TAP="$$TAP"; fi; \
+	set -e; \
+	brew tap-new "$$TAP" >/dev/null 2>&1 || true; \
+	TAP_DIR="$$(brew --repo "$$TAP")"; \
+	mkdir -p "$$TAP_DIR/Formula"; \
+	cp Formula/git-branches.rb "$$TAP_DIR/Formula/"; \
+	brew install --HEAD "$$TAP/git-branches" || brew reinstall --HEAD "$$TAP/git-branches"
