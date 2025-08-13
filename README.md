@@ -80,13 +80,6 @@ An interactive Git branch browser powered by fzf, with rich previews for GitHub 
 - Dev loop: `make dev` (ruff fix → pytest → ruff format)
 - Format: `make format` (ruff)
 
-## Project layout
-
-- `git_branch_list/`: core modules (`cli`, `git_ops`, `github`, `render`, `fzf_ui`)
-- `tests/`: pytest test suite
-- `pyproject.toml`: metadata and tool configuration
-- `Makefile`: dev tasks
-
 ## License
 
 See the repository’s `LICENSE` file.
