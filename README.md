@@ -62,6 +62,32 @@ An interactive Git branch browser powered by fzf, with rich previews for GitHub 
 - `ctrl-o`: Open the PR for the highlighted ref in the default browser
 - `alt-k`: Force-delete highlighted local branch (quick action)
 
+## Shell Completion
+
+### Zsh
+
+To get command-line completion for `git-branches`, you can source the completion script in your `.zshrc`:
+
+```zsh
+# Add this to your .zshrc
+fpath+=($PWD/contrib)
+autoload -U compinit && compinit
+```
+
+Make sure to replace `$PWD/contrib` with the actual path to where you've cloned this repository. After adding this, restart your shell or run `source ~/.zshrc`.
+
+### Bash
+
+For Bash, you can source the script in your `.bashrc` or `.bash_profile`:
+
+```bash
+# Add this to your .bashrc or .bash_profile
+source /path/to/contrib/git-branches.bash
+```
+
+Replace `/path/to/contrib/git-branches.bash` with the correct path to the script.
+
+
 ## How it works
 
 - Uses git for data (branch lists, recent commits) and fzf for the UI.
