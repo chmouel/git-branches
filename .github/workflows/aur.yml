@@ -26,7 +26,9 @@ jobs:
 
       - name: Setup build environment
         run: |
-          pacman -Syu --noconfirm --needed base-devel git python python-pip python-build python-installer python-wheel fzf
+          pacman -Syu --noconfirm --needed \
+            base-devel git fzf \
+            python python-pip python-build python-installer python-wheel python-setuptools python-requests
           # add non-root builder for makepkg
           useradd -m builder || true
           chown -R builder:builder "$GITHUB_WORKSPACE"
@@ -35,9 +37,17 @@ jobs:
         run: |
           su builder -c 'cd "$GITHUB_WORKSPACE/aur" && makepkg --syncdeps --noconfirm --cleanbuild --needed'
 
+      - name: Upload package artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: git-branches-arch-pkg
+          path: aur/*.pkg.tar.*
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Install package and smoke test
         run: |
           pkgfile=$(ls aur/*.pkg.tar.* | head -n1)
           pacman -U --noconfirm "$pkgfile"
           git-branches -h | head -n 5
-
