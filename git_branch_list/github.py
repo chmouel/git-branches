@@ -240,7 +240,7 @@ def preview_branch(ref: str, no_color: bool = False) -> None:
                 pr_status = "Closed"
         else:
             if pr_draft:
-                pr_icon = f"{colors.yellow}{colors.reset}"
+                pr_icon = f"{colors.yellow}{colors.reset}"
                 pr_status = "Draft"
             else:
                 pr_icon = f"{colors.green}{colors.reset}"
