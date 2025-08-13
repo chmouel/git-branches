@@ -85,7 +85,7 @@ def setup_colors(no_color: bool) -> Colors:
     )
 
 
-def highlight_commit_type(msg: str, colors: Colors) -> str:
+def highlight_subject(subject: str, colors: Colors) -> str:
     import re
 
     replacements = {
@@ -102,12 +102,11 @@ def highlight_commit_type(msg: str, colors: Colors) -> str:
         "revert": colors.revert,
     }
     for keyword, color in replacements.items():
-        msg = re.sub(
-            rf"^(\w+\s+)({keyword})(\(.*\))?:(.*)",
-            rf"\1{color}\2\3{colors.reset}:\4",
-            msg,
-        )
-    return msg
+        if subject.startswith(keyword + ":") or subject.startswith(keyword + "("):
+            parts = subject.split(":", 1)
+            if len(parts) > 1:
+                return f"{color}{parts[0]}{colors.reset}:{parts[1]}"
+    return subject
 
 
 def truncate_display(text: str, width: int) -> str:
@@ -120,8 +119,28 @@ def truncate_display(text: str, width: int) -> str:
     return text[: width - 1] + "…"
 
 
+COMMIT_TYPE_MAP = {
+    "feat": "",
+    "fix": "",
+    "docs": "",
+    "style": "",
+    "refactor": "",
+    "perf": "",
+    "test": "",
+    "build": "",
+    "ci": "",
+    "chore": "",
+    "revert": "",
+}
+
+
 def format_branch_info(
-    branch: str, full_ref: str, is_current: bool, colors: Colors, max_width: int
+    branch: str,
+    full_ref: str,
+    is_current: bool,
+    colors: Colors,
+    max_width: int,
+    status: str = "",
 ) -> str:
     try:
         cp = run(["git", "log", "--no-walk=unsorted", "--format=%ct|%h|%s", full_ref], check=True)
@@ -148,27 +167,39 @@ def format_branch_info(
     display_branch = truncate_display(branch, branch_width)
     hash_width = 8
     date_width = 10
-    available = max_width - (branch_width + 1 + hash_width + 1 + date_width + 1)
-    subject = commit_subject
+    icon = "·"
+    color = ""
+    for keyword, icon_val in COMMIT_TYPE_MAP.items():
+        if commit_subject.startswith(keyword):
+            icon = icon_val
+            color = getattr(colors, keyword, "")
+            break
+
+    if icon == "·":
+        icon = f"{icon} "
+    else:
+        icon = f"{color}{icon}{colors.reset} "
+
+    subject = highlight_subject(commit_subject, colors)
+
+    status_str = f"{status} " if status else ""
+    available = max_width - (branch_width + 1 + hash_width + 1 + date_width + 1 + len(status_str))
     if available > 10:
-        subject = truncate_display(subject, available - 2)
+        # We need to account for the length of the color codes
+        # It's a bit tricky, so we'll just add a buffer
+        subject = truncate_display(subject, available - 15)
 
     return (
-        f"{branch_color}{display_branch:<{branch_width}}{colors.reset} "
+        f"{icon} {branch_color}{display_branch:<{branch_width}}{colors.reset} "
         f"{colors.commit}{commit_hash:<{hash_width}}{colors.reset} "
         f"{colors.date}{formatted_date:>{date_width}}{colors.reset} "
-        f"{subject}"
+        f"{status_str}{subject}"
     )
 
 
 def git_log_oneline(ref: str, n: int = 10, colors: Colors | None = None) -> str:
     try:
-        cp = run(["git", "log", "--oneline", f"-{n}", ref])
-        if not colors:
-            return cp.stdout
-        output = []
-        for line in cp.stdout.splitlines():
-            output.append(highlight_commit_type(line, colors))
-        return "\n".join(output)
+        cp = run(["git", "log", "--oneline", f"-{n}", "--color=always", ref])
+        return cp.stdout
     except Exception:
         return ""

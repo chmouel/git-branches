@@ -82,11 +82,10 @@ def _build_rows_local(
     maxw = os.get_terminal_size().columns if sys.stdout.isatty() else 120
     for b in iter_local_branches(limit):
         is_current = b == current
-        row = format_branch_info(b, b, is_current, colors, maxw)
+        status = ""
         if show_status:
             status = github.get_branch_pushed_status(base, b)
-            if status:
-                row = f"{status} {row}"
+        row = format_branch_info(b, b, is_current, colors, maxw, status=status)
         rows.append((row, b))
     return rows
 
