@@ -6,7 +6,7 @@
 
 An interactive Git branch browser powered by fzf, with rich previews for GitHub PRs and CI status. It’s fast, keyboard-first, and designed for day-to-day workflows: jump to branches, spin up local tracking from remotes, open the PR in your browser, or prune branches in bulk.
 
-<img width="1756" height="1109" alt="image" src="https://github.com/user-attachments/assets/a973edce-07a3-4a87-a47a-aa2ffd27b0fd" />
+<img width="3724" height="2474" alt="Screenshot-1755094549-ghostty" src="https://github.com/user-attachments/assets/76b34908-d6b3-4be5-a720-222ee6894e7b" />
 
 ## Highlights
 
