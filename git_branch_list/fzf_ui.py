@@ -50,10 +50,10 @@ def fzf_select(
 
 def confirm(prompt: str) -> bool:
     try:
-        ans = input(f"{prompt} [y/N]: ").strip().lower()
+        answer = input(f"{prompt} [y/N]: ").strip().lower()
     except EOFError:
         return False
-    return ans in ("y", "yes")
+    return answer in ("y", "yes")
 
 
 def select_remote() -> str:
