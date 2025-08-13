@@ -51,6 +51,7 @@ git-branches --checks
 - Local dev via uv
   - `make install`
   - `make run` (or pass flags with `ARGS="..."`)
+
 - System-wide (optional)
   - From this directory: `uv tool install .`
   - Then invoke the console script: `git-branches`
@@ -93,6 +94,7 @@ brew install --HEAD <org>/<tap>/git-branches
 ```
 
 Notes:
+
 - The Formula uses Homebrew’s Python virtualenv and installs `git-branches` along with its Python dependencies.
 - Runtime dependencies `git` and `fzf` are declared and installed by Homebrew.
 - `--HEAD` installs from the main branch. For a pinned/stable release, update the Formula `url` and `sha256` to a tagged tarball.
@@ -100,16 +102,16 @@ Notes:
 ## Quickstart 🚀
 
 - Browse and checkout local branches:
-  - `make run`
+  - `git-branches`
 - Browse remotes and checkout (creates tracking branch if needed):
-  - `make run ARGS="-r"` (select remote interactively)
-  - `make run ARGS="-R origin"`
+  - `git-branches -r` (select remote interactively)
+  - `git-branches -R origin`
 - Deletion workflows:
-  - `make run ARGS="-d"` (delete local; multi-select)
-  - `make run ARGS="-D -R origin"` (delete remote)
+  - `git-branches -d` (delete local; multi-select)
+  - `git-branches -D -R origin` (delete remote)
 - See if local branches exist on the remote:
-  - `make run ARGS="-s"` (shows pushed status with default limit of 10)
-  - `make run ARGS="-s -S"` (disable default limit)
+  - `git-branches -s` (shows pushed status with default limit of 10)
+  - `git-branches -s -S` (disable default limit)
 
 ## Command-line options 🧭
 
@@ -219,6 +221,7 @@ Controls:
 - No icons? Install a Nerd Font and configure your terminal to use it.
 - Low API rate limit? Set `GITHUB_TOKEN` (a classic or fine-grained PAT works).
 - Homebrew says “formula not in a tap”: create a local tap and install:
+
   ```bash
   TAP="${USER}/git-branches-dev"
   brew tap-new "$TAP"
