@@ -184,6 +184,17 @@ mkdir -p ~/.config/fish/completions
 ln -sf /absolute/path/to/contrib/git-branches.fish ~/.config/fish/completions/git-branches.fish
 ```
 
+### Arch Linux (PKGBUILD / AUR-style)
+
+This repository includes a `PKGBUILD` under `aur/` for a `-git` style package (builds from HEAD).
+
+- Build locally with makepkg (requires `base-devel`):
+
+```bash
+cd aur
+makepkg -sci --noconfirm
+```
+
 ## How it works
 
 - Uses git for data (branch lists, recent commits) and fzf for the UI.

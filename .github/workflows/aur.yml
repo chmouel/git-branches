@@ -1,0 +1,43 @@
+name: Arch AUR PKGBUILD CI
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'aur/**'
+      - 'git_branch_list/**'
+      - 'pyproject.toml'
+      - 'contrib/**'
+  pull_request:
+    paths:
+      - 'aur/**'
+      - 'git_branch_list/**'
+      - 'pyproject.toml'
+      - 'contrib/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup build environment
+        run: |
+          pacman -Syu --noconfirm --needed base-devel git python python-pip python-build python-installer python-wheel fzf
+          # add non-root builder for makepkg
+          useradd -m builder || true
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: Build PKGBUILD
+        run: |
+          su builder -c 'cd "$GITHUB_WORKSPACE/aur" && makepkg --syncdeps --noconfirm --cleanbuild --needed'
+
+      - name: Install package and smoke test
+        run: |
+          pkgfile=$(ls aur/*.pkg.tar.* | head -n1)
+          pacman -U --noconfirm "$pkgfile"
+          git-branches -h | head -n 5
+
