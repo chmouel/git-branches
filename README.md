@@ -65,38 +65,6 @@ brew tap chmouel/git-branches https://github.com/chmouel/git-branches
 brew install --HEAD chmouel/git-branches/git-branches
 ```
 
-Option B — local developer tap (no remote push needed):
-
-```bash
-TAP="${USER}/git-branches-dev"
-brew tap-new "$TAP"
-TAP_DIR="$(brew --repo "$TAP")"
-mkdir -p "$TAP_DIR/Formula"
-cp Formula/git-branches.rb "$TAP_DIR/Formula/"
-brew install --HEAD "$TAP/git-branches"
-```
-
-Or use the Makefile helper (does the same steps for you):
-
-```bash
-make brew-local
-# or pick a custom tap name
-make brew-local TAP="${USER}/git-branches-dev"
-```
-
-Option C — copy `Formula/git-branches.rb` into your own GitHub tap repo (recommended for teams) and install:
-
-```bash
-brew tap <org>/<tap>
-brew install --HEAD <org>/<tap>/git-branches
-```
-
-Notes:
-
-- The Formula uses Homebrew’s Python virtualenv and installs `git-branches` along with its Python dependencies.
-- Runtime dependencies `git` and `fzf` are declared and installed by Homebrew.
-- `--HEAD` installs from the main branch. For a pinned/stable release, update the Formula `url` and `sha256` to a tagged tarball.
-
 ## Quickstart 🚀
 
 - Browse and checkout local branches:
