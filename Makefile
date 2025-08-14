@@ -44,7 +44,7 @@ fix: ## 🔧 Fix linting issues automatically
 test: ## ✅ Run tests quietly
 	$(PYTEST) -q tests
 
-test-coverage: ## 📊 Run tests with coverage report (terminal + HTML)
+coverage: ## 📊 Run tests with coverage report (terminal + HTML)
 	$(PYTEST) tests --cov=$(PY_SRC) --cov-report=term-missing --cov-report=html
 
 check: ## 🧪 Run linting and tests
@@ -63,8 +63,6 @@ dev: ## 🔁 Dev loop: fix → test → format + markdown lint
 
 ci: ## 🤖 CI-friendly: install, check, and format
 	install check format
-
-coverage: test-coverage ## 📈 Alias for test-coverage
 
 clean: ## 🧽 Remove build artifacts and cache files
 	rm -rf build/ dist/ *.egg-info/ htmlcov/ .coverage .pytest_cache/
