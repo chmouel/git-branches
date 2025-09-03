@@ -721,6 +721,11 @@ def preview_branch(ref: str, no_color: bool = False) -> None:
     from .render import format_pr_details, setup_colors, truncate_display
 
     colors = setup_colors(no_color=no_color)
+
+    # Always show branch name at the top
+    branch_header = f"{colors.bold}{colors.cyan}Branch: {ref}{colors.reset}\n"
+    sys.stdout.write(branch_header)
+
     (
         pr_num,
         pr_sha,

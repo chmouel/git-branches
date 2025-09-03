@@ -62,19 +62,25 @@ def test_fast_mode_sets_environment_variables(monkeypatch):
     from git_branch_list import cli
 
     # Clear any existing environment variables
-    for var in ["GIT_BRANCHES_OFFLINE", "GIT_BRANCHES_NO_PROGRESS",
-                "GIT_BRANCHES_NO_CACHE", "GIT_BRANCHES_PREFETCH_DETAILS"]:
+    for var in [
+        "GIT_BRANCHES_OFFLINE",
+        "GIT_BRANCHES_NO_PROGRESS",
+        "GIT_BRANCHES_NO_CACHE",
+        "GIT_BRANCHES_PREFETCH_DETAILS",
+    ]:
         if var in os.environ:
             del os.environ[var]
 
     # Mock git repo check to avoid requiring actual git repo
     def mock_ensure_git_repo(required=True):
         return True
+
     monkeypatch.setattr("git_branch_list.git_ops.ensure_git_repo", mock_ensure_git_repo)
 
     # Mock interactive function to avoid fzf call
     def mock_interactive(args):
         return 0
+
     monkeypatch.setattr("git_branch_list.cli.interactive", mock_interactive)
 
     # Test that fast mode sets environment variables
