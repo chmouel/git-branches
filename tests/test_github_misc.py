@@ -31,6 +31,9 @@ def test_actions_status_icon_variants():
 
 def test_peek_actions_status_reads_disk(monkeypatch, tmp_path):
     _reset_github_caches()
+    monkeypatch.delenv("GIT_BRANCHES_OFFLINE", raising=False)
+    monkeypatch.delenv("GIT_BRANCHES_NO_CACHE", raising=False)
+    monkeypatch.delenv("GIT_BRANCHES_REFRESH", raising=False)
     monkeypatch.setenv("GIT_BRANCHES_SHOW_CHECKS", "1")
     data = {"deadbeef": {"timestamp": 1, "data": {"status": "completed", "conclusion": "success"}}}
     cache_file = tmp_path / "actions.json"
@@ -44,6 +47,7 @@ def test_peek_actions_status_reads_disk(monkeypatch, tmp_path):
 
 def test_get_actions_status_for_sha_fetch_and_cache(monkeypatch, tmp_path):
     _reset_github_caches()
+    monkeypatch.delenv("GIT_BRANCHES_OFFLINE", raising=False)
     monkeypatch.setenv("GIT_BRANCHES_SHOW_CHECKS", "1")
     monkeypatch.setattr(github, "detect_base_repo", lambda: ("o", "r"))
 
@@ -106,6 +110,9 @@ def test_get_pr_status_from_cache(monkeypatch):
 
 def test_find_pr_for_ref_uses_details_cache(monkeypatch):
     _reset_github_caches()
+    monkeypatch.delenv("GIT_BRANCHES_OFFLINE", raising=False)
+    monkeypatch.delenv("GIT_BRANCHES_NO_CACHE", raising=False)
+    monkeypatch.delenv("GIT_BRANCHES_REFRESH", raising=False)
     github._pr_details_cache["branch"] = {  # noqa: SLF001
         "number": 7,
         "title": "My PR",
@@ -136,6 +143,7 @@ def test_find_pr_for_ref_uses_details_cache(monkeypatch):
 
 def test_prefetch_pr_details_populates_cache(monkeypatch):
     _reset_github_caches()
+    monkeypatch.delenv("GIT_BRANCHES_OFFLINE", raising=False)
     monkeypatch.setenv("GIT_BRANCHES_NO_PROGRESS", "1")
     monkeypatch.setattr(github, "detect_base_repo", lambda: ("o", "r"))
     monkeypatch.setattr(github, "_github_token", lambda: "tok")

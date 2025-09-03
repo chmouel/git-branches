@@ -94,6 +94,9 @@ def test_fast_mode_sets_environment_variables(monkeypatch):
 
 
 def test_branch_pushed_status_icons(monkeypatch):
+    # Ensure we're not in offline mode
+    monkeypatch.delenv("GIT_BRANCHES_OFFLINE", raising=False)
+
     class Resp:
         def __init__(self, code):
             self.status_code = code
@@ -150,7 +153,18 @@ def test_preview_header_variants(monkeypatch, capsys):
     run_case("closed", False, True)
 
 
+def _reset_github_caches():
+    github._pr_cache.clear()  # noqa: SLF001
+    github._pr_details_cache.clear()  # noqa: SLF001
+    github._actions_cache.clear()  # noqa: SLF001
+    github._actions_disk_loaded = False  # noqa: SLF001
+
+
 def test_find_pr_for_ref_graphql(monkeypatch):
+    # Ensure we're not in offline mode and clear caches
+    monkeypatch.delenv("GIT_BRANCHES_OFFLINE", raising=False)
+    _reset_github_caches()
+
     class Resp:
         ok = True
 
@@ -200,6 +214,8 @@ def test_find_pr_for_ref_graphql(monkeypatch):
         }
     }
 
+    # Mock the cache fetching to do nothing, so we use GraphQL
+    monkeypatch.setattr(github, "_fetch_prs_and_populate_cache", lambda: None)
     monkeypatch.setattr(github, "detect_base_repo", lambda: ("test-owner", "test-repo"))
     monkeypatch.setattr(
         github,
