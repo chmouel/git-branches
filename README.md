@@ -30,6 +30,9 @@ git-branches -s   # add -S to show all
 
 # Show GitHub Actions status (fetch over network)
 git-branches --checks
+
+# Super fast offline mode (no network, cached data only)
+git-branches --fast
 ```
 
 ## Highlights
@@ -90,6 +93,7 @@ brew install --HEAD chmouel/git-branches/git-branches
 - `-S`: With `-s`, disable default limit (show all)
 - `-C`: Disable colors
 - `-l`: List-only mode (no checkout)
+- `--fast`: Super fast offline mode (no network calls, minimal processing)
 - `--refresh`: Force refresh of PR cache (ignore stale cache and ETag)
 - `--checks`: Fetch and show GitHub Actions status (preview and a small indicator in rows). Without this flag, cached results (if available) are still displayed, but no network calls are made for checks.
 
