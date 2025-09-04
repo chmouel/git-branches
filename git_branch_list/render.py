@@ -53,6 +53,7 @@ class Colors:
     yellow: str = ""
     red: str = ""
     cyan: str = ""
+    blue: str = ""
     bold: str = ""
     italic_on: str = ""
     italic_off: str = ""
@@ -90,6 +91,7 @@ def setup_colors(no_color: bool) -> Colors:
     yellow = "\x1b[33m"
     red = "\x1b[31m"
     cyan = "\x1b[36m"
+    blue = "\x1b[34m"
     bold = "\x1b[1m"
     italic_on = "\x1b[3m"
     italic_off = "\x1b[23m"
@@ -103,6 +105,7 @@ def setup_colors(no_color: bool) -> Colors:
         yellow=yellow,
         red=red,
         cyan=cyan,
+        blue=blue,
         bold=bold,
         italic_on=italic_on,
         italic_off=italic_off,

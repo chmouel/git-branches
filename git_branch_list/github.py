@@ -721,10 +721,9 @@ def preview_branch(ref: str, no_color: bool = False) -> None:
     from .render import format_pr_details, setup_colors, truncate_display
 
     colors = setup_colors(no_color=no_color)
+    cols = int(os.environ.get("FZF_PREVIEW_COLUMNS", "80"))
 
     # Always show branch name at the top
-    branch_header = f"{colors.bold}{colors.cyan}Branch: {ref}{colors.reset}\n"
-    sys.stdout.write(branch_header)
 
     (
         pr_num,
@@ -757,7 +756,7 @@ def preview_branch(ref: str, no_color: bool = False) -> None:
         base_owner, base_repo = pr_base if pr_base else ("", "")
         pr_url = f"https://github.com/{base_owner}/{base_repo}/pull/{pr_num}"
         pr_link = f"\x1b]8;;{pr_url}\x1b\\#{pr_num}\x1b]8;;\x1b\\"
-        header = f"{pr_icon} {colors.italic_on}{pr_status}{colors.italic_off}  {pr_link}  {colors.bold}{pr_title}{colors.reset}\n"
+        header = f"{colors.blue}GitHub{colors.reset} {pr_icon} {colors.italic_on}{pr_status}{colors.italic_off} {pr_link} {colors.bold}{pr_title}{colors.reset}\n"
         details = format_pr_details(labels, review_requests, latest_reviews, colors)
         if details:
             header += details + "\n"
@@ -780,12 +779,13 @@ def preview_branch(ref: str, no_color: bool = False) -> None:
             header += f"{icon} {label}  {link}\n"
 
         if body:
-            cols = int(os.environ.get("FZF_PREVIEW_COLUMNS", "80"))
             header += "\n" + truncate_display(body, cols * 3) + "\n"
 
         sys.stdout.write(header)
-        cols = int(os.environ.get("FZF_PREVIEW_COLUMNS", "80"))
         sys.stdout.write("─" * cols + "\n")
+    branch_header = f"{colors.bold}{colors.cyan}Branch{colors.reset}: {ref}\n"
+    sys.stdout.write(branch_header)
+    sys.stdout.write("─" * cols + "\n")
     sys.stdout.write(git_log_oneline(ref, n=10, colors=colors))
 
 
