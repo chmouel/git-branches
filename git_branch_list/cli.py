@@ -6,17 +6,10 @@ import sys
 
 from . import github
 from .fzf_ui import confirm, fzf_select, select_remote
-from .git_ops import (
-    build_last_commit_cache_for_refs,
-    ensure_deps,
-    ensure_git_repo,
-    get_current_branch,
-    get_last_commit_from_cache,
-    iter_local_branches,
-    iter_remote_branches,
-    remote_ssh_url,
-    run,
-)
+from .git_ops import (build_last_commit_cache_for_refs, ensure_deps,
+                      ensure_git_repo, get_current_branch,
+                      get_last_commit_from_cache, iter_local_branches,
+                      iter_remote_branches, remote_ssh_url, run)
 from .render import Colors, format_branch_info, setup_colors
 
 
@@ -320,7 +313,7 @@ def interactive(args: argparse.Namespace) -> int:
         return 0
 
     # Local flow
-    header = "Local branches (ENTER=checkout, ESC=cancel)"
+    header = "Local branches (ENTER=checkout, ESC=cancel, F2=rename, F3=Toggle WIP)"
     preview_cmd = [exe]
     if args.no_color:
         preview_cmd.append("-C")
@@ -338,6 +331,8 @@ def interactive(args: argparse.Namespace) -> int:
     binds = [
         f"ctrl-o:execute-silent({exe} -o {{2}})",
         f"alt-k:execute(gum confirm 'Delete {{2}}?' && {exe} --delete-one {{2}})+reload({reload_cmd})",
+        f"f2:execute(reply=$(gum input --value={{2}} --prompt=\"Rename branch: \");git branch -m {{2}} \"$reply\";read -z1 -t1)+reload({reload_cmd})",
+        f"f3:execute(set -x;[[ {{2}} == WIP-* ]] && n=$(echo {{2}}|sed 's/WIP-//') || n=WIP-{{2}};git branch -m {{2}} \"$n\")+reload({reload_cmd})",
     ]
     selected = fzf_select(
         rows, header=header, preview_cmd=preview_cmd, multi=False, extra_binds=binds
