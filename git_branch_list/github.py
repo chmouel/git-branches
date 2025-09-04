@@ -22,7 +22,7 @@ _pr_cache: dict[str, dict] = {}
 _pr_details_cache: dict[str, dict] = {}
 _actions_cache: dict[str, dict] = {}
 _actions_disk_loaded: bool = False
-CACHE_DURATION_SECONDS = 300  # 5 minutes
+CACHE_DURATION_SECONDS = 3000
 
 
 def _offline() -> bool:
