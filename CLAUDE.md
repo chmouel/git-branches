@@ -52,7 +52,7 @@ This is `git-branches`, an interactive Git branch browser powered by fzf with Gi
 ### Running the Tool
 
 - `make run ARGS='...'` - Run the CLI with arguments
-- Entry point: `git_branch_list.cli:main`
+- Always use `uv` like this `uv run git-branches` to run the program.
 
 ## Environment Variables
 
@@ -76,4 +76,3 @@ The tool supports several environment variables that affect behavior:
 - Core: `requests` for HTTP/GitHub API
 - Dev: `pytest`, `ruff`, `pytest-cov`
 - External: requires `git` and `fzf` on PATH
-
