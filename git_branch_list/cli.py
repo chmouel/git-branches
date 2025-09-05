@@ -86,6 +86,12 @@ def build_parser() -> argparse.ArgumentParser:
         dest="fast",
         help="Super fast offline mode (no network calls, minimal processing)",
     )
+    p.add_argument(
+        "--pr-only",
+        action="store_true",
+        dest="pr_only",
+        help="Show only branches that have pull requests",
+    )
     p.add_argument("-h", action="help", help="Show this help")
     p.add_argument("-o", dest="open_ref", metavar="REF", help=argparse.SUPPRESS)
     p.add_argument("-p", dest="preview_ref", metavar="REF", help=argparse.SUPPRESS)
@@ -109,7 +115,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _build_rows_local(
-    show_status: bool, limit: int | None, colors: Colors
+    show_status: bool, limit: int | None, colors: Colors, pr_only: bool = False
 ) -> list[tuple[str, str]]:
     current = get_current_branch()
     rows: list[tuple[str, str]] = []
@@ -158,7 +164,24 @@ def _build_rows_local(
             if not status and show_status:
                 status = github.get_branch_pushed_status(base, b)
 
-        row = format_branch_info(b, b, is_current, colors, maxw, status=status)
+        # Filter for PR-only mode: skip branches without PR status
+        if pr_only and not fast_mode:
+            pr_status = github.get_pr_status_from_cache(b, colors)
+            if not pr_status:
+                continue
+
+        # Get PR info for display in commit message
+        pr_info = None
+        if not fast_mode:
+            # Check if branch has PR data in cache
+            if b in github._pr_cache:  # noqa: SLF001
+                pr_data = github._pr_cache[b]  # noqa: SLF001
+                pr_number = str(pr_data.get("number", ""))
+                pr_title = pr_data.get("title", "")
+                if pr_number and pr_title:
+                    pr_info = (pr_number, pr_title)
+
+        row = format_branch_info(b, b, is_current, colors, maxw, status=status, pr_info=pr_info)
         rows.append((row, b))
     return rows
 
@@ -203,7 +226,20 @@ def _build_rows_remote(remote: str, limit: int | None, colors: Colors) -> list[t
                     )
                     status = f"{status} {icon}" if status else icon
 
-        row = format_branch_info(b, f"{remote}/{b}", False, colors, maxw, status=status)
+        # Get PR info for display in commit message
+        pr_info = None
+        if not fast_mode:
+            # Check if branch has PR data in cache
+            if b in github._pr_cache:  # noqa: SLF001
+                pr_data = github._pr_cache[b]  # noqa: SLF001
+                pr_number = str(pr_data.get("number", ""))
+                pr_title = pr_data.get("title", "")
+                if pr_number and pr_title:
+                    pr_info = (pr_number, pr_title)
+
+        row = format_branch_info(
+            b, f"{remote}/{b}", False, colors, maxw, status=status, pr_info=pr_info
+        )
         rows.append((row, b))
     return rows
 
@@ -253,7 +289,7 @@ def interactive(args: argparse.Namespace) -> int:
             if args.no_color:
                 preview_cmd.append("-C")
             preview_cmd += ["-p", "{2}"]
-            rows = _build_rows_local(False, limit, colors)
+            rows = _build_rows_local(False, limit, colors, False)
             # After deleting a branch inline, reload the list
             reload_cmd = f"{exe} --emit-local-rows" + (f" -n {limit}" if limit else "")
             binds = [
@@ -320,26 +356,42 @@ def interactive(args: argparse.Namespace) -> int:
         return 0
 
     # Local flow
-    header = "Local branches (ENTER=checkout, ESC=cancel, F2=rename, F3=Toggle WIP)"
+    pr_mode_indicator = " [PR-only]" if args.pr_only else ""
+    header = f"Local branches{pr_mode_indicator} (ENTER=checkout, ESC=cancel, Alt-r=rename, Alt-w=WIP, Alt-p=PR-mode, Alt-k delete)"
     preview_cmd = [exe]
     if args.no_color:
         preview_cmd.append("-C")
     preview_cmd += ["-p", "{2}"]
-    rows = _build_rows_local(args.show_status, limit, colors)
+    rows = _build_rows_local(args.show_status, limit, colors, args.pr_only)
     # After deleting a branch inline, reload the list keeping flags consistent
     reload_parts: list[str] = [exe, "--emit-local-rows"]
     if args.show_status:
         reload_parts.append("-s")
     if args.show_status_all:
         reload_parts.append("-S")
+    if args.pr_only:
+        reload_parts.append("--pr-only")
     if limit:
         reload_parts.extend(["-n", str(limit)])
     reload_cmd = " ".join(reload_parts)
+    # Build toggle command for PR-only mode
+    toggle_parts: list[str] = [exe, "--emit-local-rows"]
+    if args.show_status:
+        toggle_parts.append("-s")
+    if args.show_status_all:
+        toggle_parts.append("-S")
+    if not args.pr_only:  # If not currently in PR-only mode, add it
+        toggle_parts.append("--pr-only")
+    if limit:
+        toggle_parts.extend(["-n", str(limit)])
+    toggle_cmd = " ".join(toggle_parts)
+
     binds = [
         f"ctrl-o:execute-silent({exe} -o {{2}})",
         f"alt-k:execute(gum confirm 'Delete {{2}}?' && {exe} --delete-one {{2}})+reload({reload_cmd})",
-        f"f2:execute(reply=$(gum input --value={{2}} --prompt=\"Rename branch: \");git branch -m {{2}} \"$reply\";read -z1 -t1)+reload({reload_cmd})",
-        f"f3:execute(set -x;[[ {{2}} == WIP-* ]] && n=$(echo {{2}}|sed 's/WIP-//') || n=WIP-{{2}};git branch -m {{2}} \"$n\")+reload({reload_cmd})",
+        f"alt-r:execute(reply=$(gum input --value={{2}} --prompt=\"Rename branch: \");git branch -m {{2}} \"$reply\";read -z1 -t1)+reload({reload_cmd})",
+        f"alt-w:execute(set -x;[[ {{2}} == WIP-* ]] && n=$(echo {{2}}|sed 's/WIP-//') || n=WIP-{{2}};git branch -m {{2}} \"$n\")+reload({reload_cmd})",
+        f"alt-p:reload({toggle_cmd})",
     ]
     selected = fzf_select(
         rows, header=header, preview_cmd=preview_cmd, multi=False, extra_binds=binds
@@ -407,7 +459,7 @@ def main(argv: list[str] | None = None) -> int:
                 if args.show_status and not args.show_status_all and not limit:
                     limit = default_limit_branch_status
                 if args.emit_local_rows:
-                    rows = _build_rows_local(args.show_status, limit, colors)
+                    rows = _build_rows_local(args.show_status, limit, colors, args.pr_only)
                 else:
                     assert args.emit_remote_rows is not None
                     rows = _build_rows_remote(args.emit_remote_rows, limit, colors)

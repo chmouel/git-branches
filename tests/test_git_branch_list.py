@@ -42,6 +42,7 @@ def test_parser_flags():
             "--refresh",
             "--checks",
             "--fast",
+            "--pr-only",
         ]
     )  # noqa: F841
     assert ns.remote_mode
@@ -53,6 +54,7 @@ def test_parser_flags():
     assert ns.refresh
     assert ns.checks
     assert ns.fast
+    assert ns.pr_only
 
 
 def test_fast_mode_sets_environment_variables(monkeypatch):
@@ -471,3 +473,129 @@ def test_remote_checkout_block_on_dirty_create(monkeypatch):
     assert rc == 1
     # Ensure no checkout -b happened
     assert not any(c[:3] == ["git", "checkout", "-b"] for c in calls)
+
+
+def test_build_rows_local_pr_only_filtering(monkeypatch):
+    """Test that _build_rows_local correctly filters branches when pr_only=True."""
+
+    # Clear offline mode to enable PR functionality
+    monkeypatch.delenv("GIT_BRANCHES_OFFLINE", raising=False)
+
+    # Mock branch list
+    monkeypatch.setattr(
+        cli, "iter_local_branches", lambda limit: ["branch-with-pr", "branch-no-pr"]
+    )
+    monkeypatch.setattr(cli, "get_current_branch", lambda: "main")
+
+    # Mock commit cache
+    monkeypatch.setattr(
+        cli,
+        "get_last_commit_from_cache",
+        lambda ref: ("1700000000", "f" * 40, "deadbee", "commit subject"),
+    )
+
+    # Mock GitHub functionality
+    monkeypatch.setattr(github, "detect_base_repo", lambda: ("owner", "repo"))
+    monkeypatch.setattr(github, "_fetch_prs_and_populate_cache", lambda: None)
+    monkeypatch.setattr(cli, "build_last_commit_cache_for_refs", lambda refs: None)
+    monkeypatch.setattr(github, "_checks_enabled", lambda: False)
+
+    # Mock PR status - only return status for branch-with-pr
+    def mock_get_pr_status(branch, colors):
+        if branch == "branch-with-pr":
+            return "🔀 PR #123"
+        return ""
+
+    monkeypatch.setattr(github, "get_pr_status_from_cache", mock_get_pr_status)
+
+    # Mock PR cache to simulate branches with/without PRs
+    github._pr_cache = {"branch-with-pr": {"number": 123, "title": "Test PR"}}
+
+    colors = render.Colors()
+
+    # Test with pr_only=False - should return both branches
+    rows_all = cli._build_rows_local(False, None, colors, pr_only=False)
+    assert len(rows_all) == 2
+    branch_names = [row[1] for row in rows_all]
+    assert "branch-with-pr" in branch_names
+    assert "branch-no-pr" in branch_names
+
+    # Test with pr_only=True - should only return branch with PR
+    rows_pr_only = cli._build_rows_local(False, None, colors, pr_only=True)
+    assert len(rows_pr_only) == 1
+    assert rows_pr_only[0][1] == "branch-with-pr"
+
+    # Clean up
+    github._pr_cache.clear()
+
+
+def test_build_rows_local_with_pr_info_display(monkeypatch):
+    """Test that _build_rows_local correctly displays PR info in branch rows."""
+
+    # Clear offline mode to enable PR functionality
+    monkeypatch.delenv("GIT_BRANCHES_OFFLINE", raising=False)
+
+    # Mock branch list
+    monkeypatch.setattr(cli, "iter_local_branches", lambda limit: ["test-branch"])
+    monkeypatch.setattr(cli, "get_current_branch", lambda: "main")
+
+    # Mock commit cache
+    monkeypatch.setattr(
+        cli,
+        "get_last_commit_from_cache",
+        lambda ref: ("1700000000", "f" * 40, "deadbee", "original commit subject"),
+    )
+
+    # Mock GitHub functionality
+    monkeypatch.setattr(github, "detect_base_repo", lambda: ("owner", "repo"))
+    monkeypatch.setattr(github, "_fetch_prs_and_populate_cache", lambda: None)
+    monkeypatch.setattr(cli, "build_last_commit_cache_for_refs", lambda refs: None)
+    monkeypatch.setattr(github, "_checks_enabled", lambda: False)
+    monkeypatch.setattr(github, "get_pr_status_from_cache", lambda branch, colors: "")
+
+    # Mock PR cache with test data
+    github._pr_cache = {"test-branch": {"number": 456, "title": "Amazing new feature"}}
+
+    colors = render.Colors()
+
+    # Test that PR info is displayed instead of commit subject
+    rows = cli._build_rows_local(False, None, colors, pr_only=False)
+    assert len(rows) == 1
+    row_display = rows[0][0]
+
+    # Should contain PR number and title
+    assert "#456 Amazing new feature" in row_display
+    # Should NOT contain original commit subject
+    assert "original commit subject" not in row_display
+
+    # Clean up
+    github._pr_cache.clear()
+
+
+def test_build_rows_local_fast_mode_pr_only(monkeypatch):
+    """Test that pr_only filtering is disabled in fast mode."""
+
+    # Set offline mode to enable fast mode
+    monkeypatch.setenv("GIT_BRANCHES_OFFLINE", "1")
+
+    # Mock branch list
+    monkeypatch.setattr(cli, "iter_local_branches", lambda limit: ["branch1", "branch2"])
+    monkeypatch.setattr(cli, "get_current_branch", lambda: "main")
+
+    # Mock commit cache
+    monkeypatch.setattr(
+        cli,
+        "get_last_commit_from_cache",
+        lambda ref: ("1700000000", "f" * 40, "deadbee", "commit subject"),
+    )
+
+    monkeypatch.setattr(cli, "build_last_commit_cache_for_refs", lambda refs: None)
+
+    colors = render.Colors()
+
+    # Even with pr_only=True, should return all branches in fast mode
+    rows = cli._build_rows_local(False, None, colors, pr_only=True)
+    assert len(rows) == 2
+    branch_names = [row[1] for row in rows]
+    assert "branch1" in branch_names
+    assert "branch2" in branch_names

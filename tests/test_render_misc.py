@@ -45,3 +45,53 @@ def test_git_log_oneline_with_and_without_colors(monkeypatch):
     cols = render.Colors(commit="C", reset="R", feat="F")
     out = render.git_log_oneline("ref", n=1, colors=cols)
     assert "subject" in out and "https://github.com/o/r/commit/aaaaaaaa" in out
+
+
+def test_format_branch_info_with_pr_info(monkeypatch):
+    # Mock cache and github detection
+    monkeypatch.setattr(
+        render,
+        "get_last_commit_from_cache",
+        lambda ref: ("1700000000", "f" * 40, "deadbee", "feat: original subject"),
+    )
+    monkeypatch.setattr(render, "_detect_github_owner_repo", lambda: ("owner", "repo"))
+
+    colors = render.Colors(commit="C", date="D", local="L", current="X", reset="R")
+
+    # Test without PR info - should show commit subject
+    out_no_pr = render.format_branch_info(
+        "branch-name", "branch-name", False, colors, max_width=120
+    )
+    assert "original subject" in out_no_pr
+    assert "#123" not in out_no_pr
+
+    # Test with PR info - should show PR number and title instead of commit subject
+    pr_info = ("123", "Add new feature")
+    out_with_pr = render.format_branch_info(
+        "branch-name", "branch-name", False, colors, max_width=120, pr_info=pr_info
+    )
+    assert "#123 Add new feature" in out_with_pr
+    assert "original subject" not in out_with_pr
+
+
+def test_format_branch_info_with_empty_pr_info(monkeypatch):
+    # Test edge cases with PR info
+    monkeypatch.setattr(
+        render,
+        "get_last_commit_from_cache",
+        lambda ref: ("1700000000", "f" * 40, "deadbee", "commit subject"),
+    )
+    monkeypatch.setattr(render, "_detect_github_owner_repo", lambda: None)
+
+    colors = render.Colors()
+
+    # Test with None PR info
+    out = render.format_branch_info("branch", "branch", False, colors, max_width=120, pr_info=None)
+    assert "commit subject" in out
+
+    # Test with empty strings in PR info tuple
+    pr_info_empty = ("", "")
+    out_empty = render.format_branch_info(
+        "branch", "branch", False, colors, max_width=120, pr_info=pr_info_empty
+    )
+    assert "# " in out_empty  # Should show "# " even with empty values

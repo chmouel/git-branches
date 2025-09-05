@@ -178,6 +178,7 @@ def format_branch_info(
     colors: Colors,
     max_width: int,
     status: str = "",
+    pr_info: tuple[str, str] | None = None,
 ) -> str:
     cached = get_last_commit_from_cache(full_ref)
     if cached:
@@ -229,7 +230,12 @@ def format_branch_info(
     else:
         icon = f"{color}{icon}{colors.reset} "
 
-    subject = highlight_subject(commit_subject, colors)
+    # Use PR info if available, otherwise use commit subject
+    if pr_info:
+        pr_number, pr_title = pr_info
+        subject = f"#{pr_number} {pr_title}"
+    else:
+        subject = highlight_subject(commit_subject, colors)
 
     status_str = f"{status} " if status else ""
     available = max_width - (branch_width + 1 + hash_width + 1 + date_width + 1 + len(status_str))
