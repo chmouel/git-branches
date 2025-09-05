@@ -212,7 +212,7 @@ def format_branch_info(
         formatted_date = "unknown"
 
     branch_color = colors.current if is_current else colors.local
-    branch_width = 24
+    branch_width = 40
     display_branch = truncate_display(branch, branch_width)
     hash_width = 8
     date_width = 10
@@ -235,8 +235,8 @@ def format_branch_info(
     available = max_width - (branch_width + 1 + hash_width + 1 + date_width + 1 + len(status_str))
     if available > 10:
         # We need to account for the length of the color codes
-        # It's a bit tricky, so we'll just add a buffer
-        subject = truncate_display(subject, available - 15)
+        # It's a bit tricky, so we'll just add a buffer and limit commit message width
+        subject = truncate_display(subject, available - 1)
 
     # Make commit hash clickable if we can detect GitHub base and colors enabled
     link_hash = commit_hash_short
