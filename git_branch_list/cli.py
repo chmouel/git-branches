@@ -6,10 +6,17 @@ import sys
 
 from . import github
 from .fzf_ui import confirm, fzf_select, select_remote
-from .git_ops import (build_last_commit_cache_for_refs, ensure_deps,
-                      ensure_git_repo, get_current_branch,
-                      get_last_commit_from_cache, iter_local_branches,
-                      iter_remote_branches, remote_ssh_url, run)
+from .git_ops import (
+    build_last_commit_cache_for_refs,
+    ensure_deps,
+    ensure_git_repo,
+    get_current_branch,
+    get_last_commit_from_cache,
+    iter_local_branches,
+    iter_remote_branches,
+    remote_ssh_url,
+    run,
+)
 from .render import Colors, format_branch_info, setup_colors
 
 
