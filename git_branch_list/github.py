@@ -8,7 +8,8 @@ import webbrowser
 
 from .git_ops import run, which
 from .progress import Spinner
-from .render import Colors, git_log_oneline
+from .render import (Colors, format_pr_details, git_log_oneline, setup_colors,
+                     truncate_display)
 
 try:  # runtime-only via uv
     import requests  # type: ignore
@@ -643,82 +644,10 @@ def _find_pr_for_ref(
     except Exception:
         pass
     return "", "", "", "", False, "", None, [], [], {}, ""
-    base_owner, base_repo = base
-
-    headers = {"Accept": "application/vnd.github+json"}
-    tok = _github_token()
-    if tok:
-        headers["Authorization"] = f"Bearer {tok}"
-
-    query = """
-    query PullRequestForBranch($owner: String!, $repo: String!, $headRefName: String!) {
-        repository(owner: $owner, name: $repo) {
-          pullRequests(headRefName: $headRefName, states: [OPEN, CLOSED, MERGED], first: 1, orderBy: {field: CREATED_AT, direction: DESC}) {
-            nodes {
-                ...pr_fields
-            }
-          }
-        }
-    }
-    """
-    variables = {"owner": base_owner, "repo": base_repo, "headRefName": branch_name}
-    url = "https://api.github.com/graphql"
-
-    try:
-        r = _requests_post(url, headers=headers, json={"query": query, "variables": variables})
-        if not r.ok:
-            return "", "", "", "", False, "", None, [], [], {}
-        data = r.json()
-        nodes = data.get("data", {}).get("repository", {}).get("pullRequests", {}).get("nodes", [])
-        if not nodes:
-            return "", "", "", "", False, "", None, [], [], {}
-
-        pr = nodes[0]
-        num = str(pr.get("number", ""))
-        title = pr.get("title", "")
-        sha = pr.get("headRefOid", "")
-        state = pr.get("state", "open").lower()
-        draft = bool(pr.get("isDraft", False))
-        merged_at = pr.get("mergedAt") or ""
-        if state == "merged":
-            state = "closed"
-
-        pr_base_owner = pr.get("baseRepository", {}).get("owner", {}).get("login", "")
-        pr_base_repo = pr.get("baseRepository", {}).get("name", "")
-        pr_base = (pr_base_owner, pr_base_repo) if pr_base_owner and pr_base_repo else None
-
-        labels = [label["name"] for label in pr.get("labels", {}).get("nodes", [])]
-        review_requests = [
-            req["requestedReviewer"].get("login") or req["requestedReviewer"].get("name")
-            for req in pr.get("reviewRequests", {}).get("nodes", [])
-            if req.get("requestedReviewer")
-        ]
-        latest_reviews = {
-            review["author"]["login"]: review["state"]
-            for review in pr.get("latestReviews", {}).get("nodes", [])
-            if review.get("author")
-        }
-
-        return (
-            num,
-            sha,
-            state,
-            title,
-            draft,
-            merged_at,
-            pr_base,
-            labels,
-            review_requests,
-            latest_reviews,
-        )
-    except Exception:
-        pass
-    return "", "", "", "", False, "", None, [], [], {}
 
 
 def preview_branch(ref: str, no_color: bool = False) -> None:
     # Build the PR header, then show recent commits
-    from .render import format_pr_details, setup_colors, truncate_display
 
     colors = setup_colors(no_color=no_color)
     cols = int(os.environ.get("FZF_PREVIEW_COLUMNS", "80"))
