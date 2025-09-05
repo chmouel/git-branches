@@ -599,3 +599,140 @@ def test_build_rows_local_fast_mode_pr_only(monkeypatch):
     branch_names = [row[1] for row in rows]
     assert "branch1" in branch_names
     assert "branch2" in branch_names
+
+
+def test_build_rows_remote_with_pr_info_display(monkeypatch):
+    """Test that _build_rows_remote correctly displays PR info in remote branch rows."""
+
+    # Clear offline mode to enable PR functionality
+    monkeypatch.delenv("GIT_BRANCHES_OFFLINE", raising=False)
+
+    # Mock remote branch list
+    monkeypatch.setattr(cli, "iter_remote_branches", lambda remote, limit: ["test-remote-branch"])
+
+    # Mock commit cache
+    monkeypatch.setattr(
+        cli,
+        "get_last_commit_from_cache",
+        lambda ref: ("1700000000", "f" * 40, "deadbee", "original commit subject"),
+    )
+
+    # Mock GitHub functionality
+    monkeypatch.setattr(github, "detect_base_repo", lambda: ("owner", "repo"))
+    monkeypatch.setattr(github, "_fetch_prs_and_populate_cache", lambda: None)
+    monkeypatch.setattr(cli, "build_last_commit_cache_for_refs", lambda refs: None)
+    monkeypatch.setattr(github, "_checks_enabled", lambda: False)
+    monkeypatch.setattr(github, "get_pr_status_from_cache", lambda branch, colors: "")
+
+    # Mock PR cache with test data
+    github._pr_cache = {"test-remote-branch": {"number": 789, "title": "Remote branch feature"}}
+
+    colors = render.Colors()
+
+    # Test that PR info is displayed instead of commit subject for remote branches
+    rows = cli._build_rows_remote("origin", None, colors)
+    assert len(rows) == 1
+    row_display = rows[0][0]
+
+    # Should contain PR number and title
+    assert "#789 Remote branch feature" in row_display
+    # Should NOT contain original commit subject
+    assert "original commit subject" not in row_display
+
+    # Clean up
+    github._pr_cache.clear()
+
+
+def test_build_rows_remote_fast_mode(monkeypatch):
+    """Test that _build_rows_remote works correctly in fast mode."""
+
+    # Set offline mode to enable fast mode
+    monkeypatch.setenv("GIT_BRANCHES_OFFLINE", "1")
+
+    # Mock remote branch list
+    monkeypatch.setattr(cli, "iter_remote_branches", lambda remote, limit: ["remote1", "remote2"])
+
+    # Mock commit cache
+    monkeypatch.setattr(
+        cli,
+        "get_last_commit_from_cache",
+        lambda ref: ("1700000000", "f" * 40, "deadbee", "commit subject"),
+    )
+
+    monkeypatch.setattr(cli, "build_last_commit_cache_for_refs", lambda refs: None)
+
+    colors = render.Colors()
+
+    # Should return all remote branches in fast mode without PR processing
+    rows = cli._build_rows_remote("origin", None, colors)
+    assert len(rows) == 2
+    branch_names = [row[1] for row in rows]
+    assert "remote1" in branch_names
+    assert "remote2" in branch_names
+
+
+def test_interactive_pr_only_toggle_command_generation(monkeypatch):
+    """Test that the Alt-p toggle command is correctly generated for PR-only mode."""
+
+    # Mock dependencies to avoid actual fzf execution
+    monkeypatch.setattr(cli, "ensure_deps", lambda interactive=True: None)
+    monkeypatch.setattr(cli, "iter_local_branches", lambda limit: ["test-branch"])
+    monkeypatch.setattr(cli, "get_current_branch", lambda: "main")
+    monkeypatch.setattr(cli, "get_last_commit_from_cache", lambda ref: None)
+    monkeypatch.setattr(cli, "build_last_commit_cache_for_refs", lambda refs: None)
+    monkeypatch.setattr(github, "detect_base_repo", lambda: None)
+    monkeypatch.setattr(github, "_fetch_prs_and_populate_cache", lambda: None)
+    monkeypatch.setattr(github, "_checks_enabled", lambda: False)
+    monkeypatch.setattr(github, "get_pr_status_from_cache", lambda branch, colors: "")
+
+    # Capture the fzf_select call to inspect the bindings
+    captured_calls = []
+
+    def mock_fzf_select(rows, header, preview_cmd, multi=False, extra_binds=None):
+        captured_calls.append({"rows": rows, "header": header, "extra_binds": extra_binds})
+        return []  # Cancel selection
+
+    monkeypatch.setattr(cli, "fzf_select", mock_fzf_select)
+
+    # Test with pr_only=False - toggle command should add --pr-only
+    args = cli.build_parser().parse_args(["-s", "-n", "5"])  # show_status=True, limit=5
+    cli.interactive(args)
+
+    assert len(captured_calls) == 1
+    bindings = captured_calls[0]["extra_binds"]
+
+    # Find the alt-p binding
+    alt_p_binding = None
+    for binding in bindings:
+        if binding.startswith("alt-p:reload("):
+            alt_p_binding = binding
+            break
+
+    assert alt_p_binding is not None
+    # Should contain --pr-only since we're not currently in PR-only mode
+    assert "--pr-only" in alt_p_binding
+    assert "-s" in alt_p_binding  # Should preserve show_status
+    assert "-n 5" in alt_p_binding  # Should preserve limit
+
+    # Reset for next test
+    captured_calls.clear()
+
+    # Test with pr_only=True - toggle command should NOT add --pr-only
+    args = cli.build_parser().parse_args(["--pr-only", "-s", "-n", "5"])
+    cli.interactive(args)
+
+    assert len(captured_calls) == 1
+    bindings = captured_calls[0]["extra_binds"]
+
+    # Find the alt-p binding
+    alt_p_binding = None
+    for binding in bindings:
+        if binding.startswith("alt-p:reload("):
+            alt_p_binding = binding
+            break
+
+    assert alt_p_binding is not None
+    # Should NOT contain --pr-only since we're currently in PR-only mode
+    assert "--pr-only" not in alt_p_binding
+    assert "-s" in alt_p_binding  # Should preserve show_status
+    assert "-n 5" in alt_p_binding  # Should preserve limit
