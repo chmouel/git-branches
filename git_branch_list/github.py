@@ -8,8 +8,7 @@ import webbrowser
 
 from .git_ops import run, which
 from .progress import Spinner
-from .render import (Colors, format_pr_details, git_log_oneline, setup_colors,
-                     truncate_display)
+from .render import Colors, format_pr_details, git_log_oneline, setup_colors, truncate_display
 
 try:  # runtime-only via uv
     import requests  # type: ignore

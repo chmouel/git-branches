@@ -1,22 +1,15 @@
 from __future__ import annotations
 
-import argap
+import argparse
 import os
 import sys
 
 from . import github
 from .fzf_ui import confirm, fzf_select, select_remote
-from .git_ops import (
-    build_last_commit_cache_for_refs,
-    ensure_deps,
-    ensure_git_repo,
-    get_current_branch,
-    get_last_commit_from_cache,
-    iter_local_branches,
-    iter_remote_branches,
-    remote_ssh_url,
-    run,
-)
+from .git_ops import (build_last_commit_cache_for_refs, ensure_deps,
+                      ensure_git_repo, get_current_branch,
+                      get_last_commit_from_cache, iter_local_branches,
+                      iter_remote_branches, remote_ssh_url, run)
 from .render import Colors, format_branch_info, setup_colors
 
 
@@ -356,8 +349,7 @@ def interactive(args: argparse.Namespace) -> int:
         return 0
 
     # Local flow
-    pr_mode_indicator = " [PR-only]" if args.pr_only else ""
-    header = f"Local branches{pr_mode_indicator} (ENTER=checkout, ESC=cancel, Alt-r=rename, Alt-w=WIP, Alt-p=PR-mode, Alt-k delete)"
+    header = "(Ctrl-o=open, Alt-r=rename, Alt-w=WIP, Alt-p=PR Only, Alt-k delete)"
     preview_cmd = [exe]
     if args.no_color:
         preview_cmd.append("-C")
