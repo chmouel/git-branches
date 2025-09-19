@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import time
 import webbrowser
 
 from .git_ops import run, which
 from .progress import Spinner
-from .render import Colors, format_pr_details, git_log_oneline, setup_colors, truncate_display
+from .render import (Colors, format_pr_details, git_log_oneline, setup_colors,
+                     truncate_display)
 
 try:  # runtime-only via uv
     import requests  # type: ignore
@@ -22,6 +24,7 @@ _pr_cache: dict[str, dict] = {}
 _pr_details_cache: dict[str, dict] = {}
 _actions_cache: dict[str, dict] = {}
 _actions_disk_loaded: bool = False
+_current_user_cache: str = ""
 CACHE_DURATION_SECONDS = 3000
 
 
@@ -182,13 +185,50 @@ def detect_base_repo() -> tuple[str, str] | None:
 
 
 def _github_token() -> str:
-    tok = os.environ.get("GITHUB_TOKEN", "").strip()
-    if tok:
-        return tok
+    if token := os.environ.get("GITHUB_TOKEN", "").strip():
+        return token
+
+    if which("pass") and (
+        token := _run_cmd(["pass", "show", f"github/{os.environ.get('USER', '')}-token"])
+    ):
+        return token
+
+    if which("gh") and (token := _run_cmd(["gh", "auth", "token"])):
+        return token
+
+    return ""
+
+
+def _run_cmd(cmd: list) -> str:
     try:
-        if which("pass"):
-            cp = run(["pass", "show", f"github/{os.environ.get('USER', '')}-token"], check=True)
-            return cp.stdout.strip()
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=5)
+        return result.stdout.strip()
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return ""
+
+
+def _get_current_github_user() -> str:
+    """Get the current GitHub user login, cached per session."""
+    global _current_user_cache
+    if _current_user_cache:
+        return _current_user_cache
+    if _offline():
+        return ""
+
+    tok = _github_token()
+    if not tok:
+        return ""
+
+    try:
+        headers = {"Accept": "application/vnd.github+json", "Authorization": f"Bearer {tok}"}
+        query = "query { viewer { login } }"
+        r = _requests_post("https://api.github.com/graphql", headers=headers, json={"query": query})
+        if r.ok:
+            data = r.json()
+            login = data.get("data", {}).get("viewer", {}).get("login", "")
+            if login:
+                _current_user_cache = login
+                return login
     except Exception:
         pass
     return ""
@@ -312,6 +352,9 @@ def _fetch_prs_and_populate_cache() -> None:
             mergedAt,
             headRefName,
             headRefOid,
+            author {
+                login
+            },
             baseRepository {
                 owner { login },
                 name
@@ -759,7 +802,7 @@ def prefetch_pr_details(branches: list[str], chunk_size: int = 20) -> None:
             + ", ".join(f"${'r' + str(idx)}: String!" for idx in range(len(subset)))
             + ") {\n  repository(owner: $owner, name: $repo) {\n    "
             + "\n    ".join(aliases)
-            + "\n  }\n}\n\nfragment pr_fields on PullRequest {\n  url\n  number\n  state\n  title\n  isDraft\n  mergedAt\n  headRefName\n  headRefOid\n  body\n  baseRepository { owner { login } name }\n  labels(first: 5) { nodes { name } }\n  reviewRequests(first: 5) { nodes { requestedReviewer { ... on User { login } ... on Team { name } } } }\n  latestReviews(first: 10) { nodes { author { login } state } }\n}\n"
+            + "\n  }\n}\n\nfragment pr_fields on PullRequest {\n  url\n  number\n  state\n  title\n  isDraft\n  mergedAt\n  headRefName\n  headRefOid\n  body\n  author { login }\n  baseRepository { owner { login } name }\n  labels(first: 5) { nodes { name } }\n  reviewRequests(first: 5) { nodes { requestedReviewer { ... on User { login } ... on Team { name } } } }\n  latestReviews(first: 10) { nodes { author { login } state } }\n}\n"
         )
         try:
             r = _requests_post(

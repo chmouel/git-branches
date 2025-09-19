@@ -189,6 +189,7 @@ def test_find_pr_for_ref_graphql(monkeypatch):
                             "isDraft": False,
                             "mergedAt": None,
                             "body": "This is the PR body.",
+                            "author": {"login": "test-author"},
                             "baseRepository": {
                                 "owner": {"login": "test-owner"},
                                 "name": "test-repo",

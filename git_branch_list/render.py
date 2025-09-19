@@ -50,6 +50,7 @@ class Colors:
     date: str = ""
     reset: str = ""
     green: str = ""
+    grey: str = ""
     yellow: str = ""
     red: str = ""
     cyan: str = ""
@@ -88,6 +89,7 @@ def setup_colors(no_color: bool) -> Colors:
     date = get_git_color("color.branch.upstream", "cyan")
     reset = "\x1b[0m"
     green = "\x1b[32m"
+    grey = "\x1b[90m"
     yellow = "\x1b[33m"
     red = "\x1b[31m"
     cyan = "\x1b[36m"
@@ -102,6 +104,7 @@ def setup_colors(no_color: bool) -> Colors:
         date=date,
         reset=reset,
         green=green,
+        grey=grey,
         yellow=yellow,
         red=red,
         cyan=cyan,
@@ -179,6 +182,7 @@ def format_branch_info(
     max_width: int,
     status: str = "",
     pr_info: tuple[str, str] | None = None,
+    is_own_pr: bool = False,
 ) -> str:
     cached = get_last_commit_from_cache(full_ref)
     if cached:
@@ -206,7 +210,7 @@ def format_branch_info(
 
     if commit_date and commit_date != "0":
         try:
-            formatted_date = datetime.fromtimestamp(int(commit_date)).strftime("%Y-%m-%d")
+            formatted_date = datetime.fromtimestamp(int(commit_date)).strftime("%b-%d")
         except Exception:
             formatted_date = "unknown"
     else:
@@ -233,7 +237,11 @@ def format_branch_info(
     # Use PR info if available, otherwise use commit subject
     if pr_info:
         pr_number, pr_title = pr_info
-        subject = f"#{pr_number} {pr_title}"
+        if is_own_pr:
+            # Add visual indicator for user's own PRs
+            subject = f"{colors.yellow}★{colors.reset} #{pr_number} {pr_title}"
+        else:
+            subject = f"{colors.grey}{colors.reset} #{pr_number} {pr_title}"
     else:
         subject = highlight_subject(commit_subject, colors)
 

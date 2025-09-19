@@ -6,10 +6,17 @@ import sys
 
 from . import github
 from .fzf_ui import confirm, fzf_select, select_remote
-from .git_ops import (build_last_commit_cache_for_refs, ensure_deps,
-                      ensure_git_repo, get_current_branch,
-                      get_last_commit_from_cache, iter_local_branches,
-                      iter_remote_branches, remote_ssh_url, run)
+from .git_ops import (
+    build_last_commit_cache_for_refs,
+    ensure_deps,
+    ensure_git_repo,
+    get_current_branch,
+    get_last_commit_from_cache,
+    iter_local_branches,
+    iter_remote_branches,
+    remote_ssh_url,
+    run,
+)
 from .render import Colors, format_branch_info, setup_colors
 
 
@@ -165,6 +172,7 @@ def _build_rows_local(
 
         # Get PR info for display in commit message
         pr_info = None
+        is_own_pr = False
         if not fast_mode:
             # Check if branch has PR data in cache
             if b in github._pr_cache:  # noqa: SLF001
@@ -173,8 +181,12 @@ def _build_rows_local(
                 pr_title = pr_data.get("title", "")
                 if pr_number and pr_title:
                     pr_info = (pr_number, pr_title)
+                    # Check if this PR is by the current user
+                    pr_author = pr_data.get("author", {}).get("login", "")
+                    current_user = github._get_current_github_user()  # noqa: SLF001
+                    is_own_pr = pr_author == current_user and current_user != ""
 
-        row = format_branch_info(b, b, is_current, colors, maxw, status=status, pr_info=pr_info)
+        row = format_branch_info(b, b, is_current, colors, maxw, status=status, pr_info=pr_info, is_own_pr=is_own_pr)
         rows.append((row, b))
     return rows
 
@@ -221,6 +233,7 @@ def _build_rows_remote(remote: str, limit: int | None, colors: Colors) -> list[t
 
         # Get PR info for display in commit message
         pr_info = None
+        is_own_pr = False
         if not fast_mode:
             # Check if branch has PR data in cache
             if b in github._pr_cache:  # noqa: SLF001
@@ -229,9 +242,13 @@ def _build_rows_remote(remote: str, limit: int | None, colors: Colors) -> list[t
                 pr_title = pr_data.get("title", "")
                 if pr_number and pr_title:
                     pr_info = (pr_number, pr_title)
+                    # Check if this PR is by the current user
+                    pr_author = pr_data.get("author", {}).get("login", "")
+                    current_user = github._get_current_github_user()  # noqa: SLF001
+                    is_own_pr = pr_author == current_user and current_user != ""
 
         row = format_branch_info(
-            b, f"{remote}/{b}", False, colors, maxw, status=status, pr_info=pr_info
+            b, f"{remote}/{b}", False, colors, maxw, status=status, pr_info=pr_info, is_own_pr=is_own_pr
         )
         rows.append((row, b))
     return rows
