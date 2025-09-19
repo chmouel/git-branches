@@ -251,11 +251,10 @@ def get_pr_status_from_cache(branch: str, colors: Colors) -> str:
 
 
 def _fetch_prs_and_populate_cache() -> None:
-    """Populate in-memory PR cache using REST list + ETag; fallback to GraphQL.
+    """Populate in-memory PR cache using a single GraphQL query.
 
     Builds a mapping keyed by branch name (head.ref) with minimal PR fields for
-    fast status rendering. Stores a short-lived on-disk cache with ETag support
-    to reduce API calls. Falls back to the previous GraphQL query if REST fails.
+    fast status rendering. Stores a short-lived on-disk cache to reduce API calls.
     """
     global _pr_cache
     if _pr_cache:
@@ -288,124 +287,10 @@ def _fetch_prs_and_populate_cache() -> None:
         return
     owner, repo = base
 
-    headers = {"Accept": "application/vnd.github+json"}
     tok = _github_token()
-    if tok:
-        headers["Authorization"] = f"Bearer {tok}"
+    if not tok:
+        return
 
-    # Use REST list with ETag for open PRs (most useful for status)
-    etag = (disk_data or {}).get("etag") if isinstance(disk_data, dict) else None
-    if etag and not _refresh() and not _no_cache():
-        headers["If-None-Match"] = etag
-    try:
-        url_open = f"https://api.github.com/repos/{owner}/{repo}/pulls?state=open&per_page=100"
-        sp: Spinner | None = None
-        if _progress_enabled() and sys.stderr.isatty():
-            sp = Spinner("Fetching PRs from GitHub...")
-            sp.start()
-        r = _requests_get(url_open, headers=headers)
-        if r.status_code == 304 and disk_data and disk_data.get("prs"):
-            _pr_cache = disk_data["prs"]
-            if sp:
-                sp.stop()
-            return
-        if r.status_code == 200:
-            open_list = r.json() or []
-            mapping: dict[str, dict] = {}
-            for pr in open_list:
-                head = pr.get("head", {})
-                base_info = pr.get("base", {})
-                ref = head.get("ref")
-                if not ref:
-                    continue
-                merged_at = pr.get("merged_at")
-                state = pr.get("state", "open").lower()
-                if state == "closed" and merged_at:
-                    state = "merged"
-                mapping[ref] = {
-                    "number": pr.get("number"),
-                    "title": pr.get("title", ""),
-                    "state": state,
-                    "isDraft": bool(pr.get("draft", False)),
-                    "mergedAt": merged_at or "",
-                    "headRefName": ref,
-                    "headRefOid": head.get("sha", ""),
-                    "baseRepository": {
-                        "owner": {
-                            "login": (base_info.get("repo", {}) or {})
-                            .get("owner", {})
-                            .get("login", "")
-                        },
-                        "name": (base_info.get("repo", {}) or {}).get("name", ""),
-                    },
-                }
-            # Optionally fetch a small slice of recently closed to capture merges
-            try:
-                url_closed = f"https://api.github.com/repos/{owner}/{repo}/pulls?state=closed&per_page=50&sort=updated&direction=desc"
-                rc = _requests_get(
-                    url_closed, headers={k: v for k, v in headers.items() if k != "If-None-Match"}
-                )
-                if rc.status_code == 200:
-                    closed_list = rc.json() or []
-                    for pr in closed_list:
-                        head = pr.get("head", {})
-                        base_info = pr.get("base", {})
-                        ref = head.get("ref")
-                        if not ref:
-                            continue
-                        merged_at = pr.get("merged_at")
-                        state = pr.get("state", "closed").lower()
-                        if state == "closed" and merged_at:
-                            state = "merged"
-                        mapping.setdefault(
-                            ref,
-                            {
-                                "number": pr.get("number"),
-                                "title": pr.get("title", ""),
-                                "state": state,
-                                "isDraft": bool(pr.get("draft", False)),
-                                "mergedAt": merged_at or "",
-                                "headRefName": ref,
-                                "headRefOid": head.get("sha", ""),
-                                "baseRepository": {
-                                    "owner": {
-                                        "login": (base_info.get("repo", {}) or {})
-                                        .get("owner", {})
-                                        .get("login", "")
-                                    },
-                                    "name": (base_info.get("repo", {}) or {}).get("name", ""),
-                                },
-                            },
-                        )
-            except Exception:
-                pass
-
-            if mapping:
-                _pr_cache = mapping
-                if not _no_cache():
-                    try:
-                        os.makedirs(CACHE_DIR, exist_ok=True)
-                        with open(CACHE_FILE, "w", encoding="utf-8") as f:
-                            json.dump(
-                                {
-                                    "timestamp": time.time(),
-                                    "etag": r.headers.get("ETag", ""),
-                                    "prs": _pr_cache,
-                                },
-                                f,
-                            )
-                    except Exception:
-                        pass
-                if sp:
-                    sp.stop()
-                return
-        if sp:
-            sp.stop()
-    except Exception:
-        # Fall back to GraphQL below
-        pass
-
-    # Fallback: GraphQL (kept for preview parity and environments without REST cache)
     try:
         gh_headers = {"Accept": "application/vnd.github+json"}
         if tok:
@@ -413,10 +298,7 @@ def _fetch_prs_and_populate_cache() -> None:
         query = """
         query RepositoryPullRequests($owner: String!, $repo: String!) {
             repository(owner: $owner, name: $repo) {
-              open: pullRequests(first: 30, states: [OPEN], orderBy: {field: UPDATED_AT, direction: DESC}) {
-                nodes { ...pr_fields }
-              }
-              closed: pullRequests(first: 30, states: [CLOSED, MERGED], orderBy: {field: UPDATED_AT, direction: DESC}) {
+              pullRequests(first: 100, states: [OPEN, CLOSED, MERGED], orderBy: {field: UPDATED_AT, direction: DESC}) {
                 nodes { ...pr_fields }
               }
             }
@@ -439,14 +321,19 @@ def _fetch_prs_and_populate_cache() -> None:
         """
         variables = {"owner": owner, "repo": repo}
         url = "https://api.github.com/graphql"
+        sp: Spinner | None = None
+        if _progress_enabled() and sys.stderr.isatty():
+            sp = Spinner("Fetching PRs from GitHub...")
+            sp.start()
         r = _requests_post(url, headers=gh_headers, json={"query": query, "variables": variables})
+        if sp:
+            sp.stop()
         if not r.ok:
             return
         data = r.json()
         repo_data = data.get("data", {}).get("repository", {})
-        open_nodes = repo_data.get("open", {}).get("nodes", [])
-        closed_nodes = repo_data.get("closed", {}).get("nodes", [])
-        _pr_cache = {pr["headRefName"]: pr for pr in open_nodes + closed_nodes}
+        nodes = repo_data.get("pullRequests", {}).get("nodes", [])
+        _pr_cache = {pr["headRefName"]: pr for pr in nodes if pr.get("headRefName")}
         if not _no_cache():
             os.makedirs(CACHE_DIR, exist_ok=True)
             with open(CACHE_FILE, "w", encoding="utf-8") as f:
