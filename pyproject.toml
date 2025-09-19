@@ -53,7 +53,6 @@ packages = ["git_branch_list"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "-v --tb=short --cov=git_branch_list --cov-report=term-missing --cov-report=html"
 
 [tool.coverage.run]
 source = ["git_branch_list"]
