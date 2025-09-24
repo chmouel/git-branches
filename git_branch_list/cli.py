@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 
 from . import github
@@ -92,7 +93,25 @@ def build_parser() -> argparse.ArgumentParser:
         dest="pr_only",
         help="Show only branches that have pull requests",
     )
-    p.add_argument("-h", action="help", help="Show this help")
+    p.add_argument(
+        "--no-wip",
+        action="store_true",
+        dest="no_wip",
+        help="Filter out WIP branches (branches starting with 'WIP-')",
+    )
+    p.add_argument(
+        "--no-pr",
+        action="store_true",
+        dest="no_pr",
+        help="Filter out branches that have pull requests",
+    )
+    p.add_argument(
+        "--exclude",
+        metavar="PATTERN",
+        dest="exclude_pattern",
+        help="Exclude branches matching regex pattern (e.g., --exclude='SRVKP.*')",
+    )
+    p.add_argument("-h", "--help", action="help", help="Show this help")
     p.add_argument("-o", dest="open_ref", metavar="REF", help=argparse.SUPPRESS)
     p.add_argument("-p", dest="preview_ref", metavar="REF", help=argparse.SUPPRESS)
     p.add_argument("-f", action="store_true", dest="force", help=argparse.SUPPRESS)
@@ -115,7 +134,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _build_rows_local(
-    show_status: bool, limit: int | None, colors: Colors, pr_only: bool = False
+    show_status: bool, limit: int | None, colors: Colors, pr_only: bool = False, no_wip: bool = False, no_pr: bool = False, exclude_pattern: str | None = None
 ) -> list[tuple[str, str]]:
     current = get_current_branch()
     rows: list[tuple[str, str]] = []
@@ -170,6 +189,25 @@ def _build_rows_local(
             if not pr_status:
                 continue
 
+        # Filter out WIP branches if requested
+        if no_wip and b.startswith("WIP-"):
+            continue
+
+        # Filter out branches with PRs if requested
+        if no_pr and not fast_mode:
+            pr_status = github.get_pr_status_from_cache(b, colors)
+            if pr_status:  # Has PR, so skip it
+                continue
+
+        # Filter out branches matching exclude pattern if requested
+        if exclude_pattern:
+            try:
+                if re.search(exclude_pattern, b):
+                    continue
+            except re.error:
+                # Invalid regex pattern, ignore the filter
+                pass
+
         # Get PR info for display in commit message
         pr_info = None
         is_own_pr = False
@@ -191,7 +229,7 @@ def _build_rows_local(
     return rows
 
 
-def _build_rows_remote(remote: str, limit: int | None, colors: Colors) -> list[tuple[str, str]]:
+def _build_rows_remote(remote: str, limit: int | None, colors: Colors, no_wip: bool = False, no_pr: bool = False, exclude_pattern: str | None = None) -> list[tuple[str, str]]:
     rows: list[tuple[str, str]] = []
     maxw = os.get_terminal_size().columns if sys.stdout.isatty() else 120
     branches = list(iter_remote_branches(remote, limit))
@@ -230,6 +268,25 @@ def _build_rows_remote(remote: str, limit: int | None, colors: Colors) -> list[t
                         act.get("conclusion"), act.get("status"), colors
                     )
                     status = f"{status} {icon}" if status else icon
+
+        # Filter out WIP branches if requested
+        if no_wip and b.startswith("WIP-"):
+            continue
+
+        # Filter out branches with PRs if requested
+        if no_pr and not fast_mode:
+            pr_status = github.get_pr_status_from_cache(b, colors)
+            if pr_status:  # Has PR, so skip it
+                continue
+
+        # Filter out branches matching exclude pattern if requested
+        if exclude_pattern:
+            try:
+                if re.search(exclude_pattern, b):
+                    continue
+            except re.error:
+                # Invalid regex pattern, ignore the filter
+                pass
 
         # Get PR info for display in commit message
         pr_info = None
@@ -275,7 +332,7 @@ def interactive(args: argparse.Namespace) -> int:
             if args.no_color:
                 preview_cmd.append("-C")
             preview_cmd += ["-p", f"{remote}/{{2}}"]
-            rows = _build_rows_remote(remote, limit, colors)
+            rows = _build_rows_remote(remote, limit, colors, args.no_wip, args.no_pr, args.exclude_pattern)
             selected = fzf_select(
                 rows, header=header, preview_cmd=preview_cmd, multi=True, extra_binds=None
             )
@@ -299,9 +356,18 @@ def interactive(args: argparse.Namespace) -> int:
             if args.no_color:
                 preview_cmd.append("-C")
             preview_cmd += ["-p", "{2}"]
-            rows = _build_rows_local(False, limit, colors, False)
+            rows = _build_rows_local(False, limit, colors, False, args.no_wip, args.no_pr, args.exclude_pattern)
             # After deleting a branch inline, reload the list
-            reload_cmd = f"{exe} --emit-local-rows" + (f" -n {limit}" if limit else "")
+            reload_parts = [f"{exe}", "--emit-local-rows"]
+            if args.no_wip:
+                reload_parts.append("--no-wip")
+            if args.no_pr:
+                reload_parts.append("--no-pr")
+            if args.exclude_pattern:
+                reload_parts.extend(["--exclude", args.exclude_pattern])
+            if limit:
+                reload_parts.extend(["-n", str(limit)])
+            reload_cmd = " ".join(reload_parts)
             binds = [
                 f"ctrl-o:execute-silent({exe} -o {{2}})",
                 f"alt-k:execute(gum confirm 'Delete {{2}}?' && {exe} --delete-one {{2}})+reload({reload_cmd})",
@@ -371,7 +437,7 @@ def interactive(args: argparse.Namespace) -> int:
     if args.no_color:
         preview_cmd.append("-C")
     preview_cmd += ["-p", "{2}"]
-    rows = _build_rows_local(args.show_status, limit, colors, args.pr_only)
+    rows = _build_rows_local(args.show_status, limit, colors, args.pr_only, args.no_wip, args.no_pr, args.exclude_pattern)
     # After deleting a branch inline, reload the list keeping flags consistent
     reload_parts: list[str] = [exe, "--emit-local-rows"]
     if args.show_status:
@@ -380,6 +446,12 @@ def interactive(args: argparse.Namespace) -> int:
         reload_parts.append("-S")
     if args.pr_only:
         reload_parts.append("--pr-only")
+    if args.no_wip:
+        reload_parts.append("--no-wip")
+    if args.no_pr:
+        reload_parts.append("--no-pr")
+    if args.exclude_pattern:
+        reload_parts.extend(["--exclude", args.exclude_pattern])
     if limit:
         reload_parts.extend(["-n", str(limit)])
     reload_cmd = " ".join(reload_parts)
@@ -391,6 +463,12 @@ def interactive(args: argparse.Namespace) -> int:
         toggle_parts.append("-S")
     if not args.pr_only:  # If not currently in PR-only mode, add it
         toggle_parts.append("--pr-only")
+    if args.no_wip:
+        toggle_parts.append("--no-wip")
+    if args.no_pr:
+        toggle_parts.append("--no-pr")
+    if args.exclude_pattern:
+        toggle_parts.extend(["--exclude", args.exclude_pattern])
     if limit:
         toggle_parts.extend(["-n", str(limit)])
     toggle_cmd = " ".join(toggle_parts)
@@ -468,10 +546,10 @@ def main(argv: list[str] | None = None) -> int:
                 if args.show_status and not args.show_status_all and not limit:
                     limit = default_limit_branch_status
                 if args.emit_local_rows:
-                    rows = _build_rows_local(args.show_status, limit, colors, args.pr_only)
+                    rows = _build_rows_local(args.show_status, limit, colors, args.pr_only, args.no_wip, args.no_pr, args.exclude_pattern)
                 else:
                     assert args.emit_remote_rows is not None
-                    rows = _build_rows_remote(args.emit_remote_rows, limit, colors)
+                    rows = _build_rows_remote(args.emit_remote_rows, limit, colors, args.no_wip, args.no_pr, args.exclude_pattern)
                 for shown, value in rows:
                     print(f"{shown}\t{value}")
                 return 0
