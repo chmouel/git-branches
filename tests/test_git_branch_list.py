@@ -394,6 +394,70 @@ def test_local_checkout(monkeypatch):
     assert any(c[:2] == ["git", "checkout"] and c[-1] == "feature" for c in calls)
 
 
+def test_local_checkout_worktree_detection(monkeypatch, capsys):
+    """Test that worktree detection prevents checkout and prints worktree path."""
+    calls = []
+    monkeypatch.setattr(cli, "ensure_deps", lambda interactive=True: None)
+    monkeypatch.setattr(cli, "iter_local_branches", lambda limit: ["feature"])  # noqa: ARG005
+    monkeypatch.setattr(
+        cli,
+        "fzf_select",
+        lambda rows, header, preview_cmd, multi=False, extra_binds=None: ["feature"],
+    )  # noqa: ARG005
+    monkeypatch.setattr(cli, "is_branch_in_worktree", lambda branch: True)
+    monkeypatch.setattr(cli, "get_worktree_path", lambda branch: "/path/to/worktree")
+
+    def fake_run(cmd, cwd=None, check=True):  # noqa: ANN001, ARG001
+        calls.append(cmd)
+
+        class CP:
+            stdout = ""
+
+        return CP()
+
+    monkeypatch.setattr(cli, "run", fake_run)
+    args = cli.build_parser().parse_args([])
+    rc = cli.interactive(args)
+    assert rc == 0
+    # Should not have called git checkout
+    assert not any(c[:2] == ["git", "checkout"] for c in calls)
+    # Should have printed worktree path
+    captured = capsys.readouterr()
+    assert "Branch 'feature' is checked out in worktree: /path/to/worktree" in captured.out
+
+
+def test_remote_checkout_worktree_detection(monkeypatch, capsys):
+    """Test that worktree detection prevents remote checkout and prints worktree path."""
+    calls = []
+    monkeypatch.setattr(cli, "ensure_deps", lambda interactive=True: None)
+    monkeypatch.setattr(cli, "iter_remote_branches", lambda remote, limit: ["feature"])  # noqa: ARG005
+    monkeypatch.setattr(
+        cli,
+        "fzf_select",
+        lambda rows, header, preview_cmd, multi=False, extra_binds=None: ["feature"],
+    )  # noqa: ARG005
+    monkeypatch.setattr(cli, "is_branch_in_worktree", lambda branch: True)
+    monkeypatch.setattr(cli, "get_worktree_path", lambda branch: "/path/to/worktree")
+
+    def fake_run(cmd, cwd=None, check=True):  # noqa: ANN001, ARG001
+        calls.append(cmd)
+
+        class CP:
+            stdout = ""
+
+        return CP()
+
+    monkeypatch.setattr(cli, "run", fake_run)
+    args = cli.build_parser().parse_args(["-r"])
+    rc = cli.interactive(args)
+    assert rc == 0
+    # Should not have called git checkout
+    assert not any(c[:2] == ["git", "checkout"] for c in calls)
+    # Should have printed worktree path
+    captured = capsys.readouterr()
+    assert "Branch 'feature' is checked out in worktree: /path/to/worktree" in captured.out
+
+
 def test_local_checkout_block_on_dirty(monkeypatch):
     calls = []
     monkeypatch.setattr(cli, "ensure_deps", lambda interactive=True: None)

@@ -159,3 +159,36 @@ def is_workdir_dirty() -> bool:
         return bool(cp.stdout.strip())
     except Exception:
         return False
+
+
+def is_branch_in_worktree(branch: str) -> bool:
+    """Check if a branch is checked out in a worktree.
+
+    Returns True if the branch is checked out in any worktree (including the main worktree).
+    """
+    try:
+        cp = run(["git", "worktree", "list", "--porcelain"], check=True)
+        for line in cp.stdout.splitlines():
+            if line.startswith("branch ") and line[7:] == f"refs/heads/{branch}":
+                return True
+        return False
+    except Exception:
+        return False
+
+
+def get_worktree_path(branch: str) -> str | None:
+    """Get the worktree path for a given branch.
+
+    Returns the path to the worktree where the branch is checked out, or None if not found.
+    """
+    try:
+        cp = run(["git", "worktree", "list", "--porcelain"], check=True)
+        current_worktree = None
+        for line in cp.stdout.splitlines():
+            if line.startswith("worktree "):
+                current_worktree = line[9:]  # Remove "worktree " prefix
+            elif line.startswith("branch ") and line[7:] == f"refs/heads/{branch}":
+                return current_worktree
+        return None
+    except Exception:
+        return None

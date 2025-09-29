@@ -95,3 +95,40 @@ def test_format_branch_info_with_empty_pr_info(monkeypatch):
         "branch", "branch", False, colors, max_width=120, pr_info=pr_info_empty
     )
     assert "# " in out_empty  # Should show "# " even with empty values
+
+
+def test_format_branch_info_worktree_coloring(monkeypatch):
+    """Test that worktree branches are colored magenta."""
+    monkeypatch.setattr(
+        render,
+        "get_last_commit_from_cache",
+        lambda ref: ("1700000000", "f" * 40, "deadbee", "feat: worktree branch"),
+    )
+    monkeypatch.setattr(render, "_detect_github_owner_repo", lambda: None)
+
+    colors = render.Colors(
+        local="\x1b[32m",  # green for normal branches
+        current="\x1b[33m",  # yellow for current branch
+        magenta="\x1b[35m",  # magenta for worktree branches
+        reset="\x1b[0m",
+        commit="\x1b[37m",
+        date="\x1b[37m",
+    )
+
+    # Test normal branch (not worktree)
+    out_normal = render.format_branch_info(
+        "normal-branch", "normal-branch", False, colors, max_width=120, is_worktree=False
+    )
+    assert "\x1b[32mnormal-branch" in out_normal  # Should use local color (green)
+
+    # Test worktree branch
+    out_worktree = render.format_branch_info(
+        "worktree-branch", "worktree-branch", False, colors, max_width=120, is_worktree=True
+    )
+    assert "\x1b[35mworktree-branch" in out_worktree  # Should use magenta color
+
+    # Test current branch (should still be current color even if worktree)
+    out_current_worktree = render.format_branch_info(
+        "current-branch", "current-branch", True, colors, max_width=120, is_worktree=True
+    )
+    assert "\x1b[33mcurrent-branch" in out_current_worktree  # Should use current color (yellow)

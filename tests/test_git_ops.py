@@ -144,3 +144,39 @@ def test_remote_ssh_url_and_dirty(monkeypatch):
 
     monkeypatch.setattr(git_ops, "run", _err)
     assert git_ops.is_workdir_dirty() is False
+
+
+def test_is_branch_in_worktree(monkeypatch):
+    # Branch is in worktree
+    worktree_output = "worktree /path/to/worktree\nbranch refs/heads/feature\nworktree /path/to/main\nbranch refs/heads/main\n"
+    monkeypatch.setattr(
+        git_ops, "run", lambda cmd, check=True: types.SimpleNamespace(stdout=worktree_output)
+    )
+    assert git_ops.is_branch_in_worktree("feature") is True
+    assert git_ops.is_branch_in_worktree("main") is True
+    assert git_ops.is_branch_in_worktree("nonexistent") is False
+
+    # Error case
+    def _fail(cmd, check=True):  # noqa: ANN001, ARG001
+        raise git_ops.subprocess.CalledProcessError(1, cmd)
+
+    monkeypatch.setattr(git_ops, "run", _fail)
+    assert git_ops.is_branch_in_worktree("feature") is False
+
+
+def test_get_worktree_path(monkeypatch):
+    # Branch is in worktree
+    worktree_output = "worktree /path/to/feature-worktree\nbranch refs/heads/feature\nworktree /path/to/main\nbranch refs/heads/main\n"
+    monkeypatch.setattr(
+        git_ops, "run", lambda cmd, check=True: types.SimpleNamespace(stdout=worktree_output)
+    )
+    assert git_ops.get_worktree_path("feature") == "/path/to/feature-worktree"
+    assert git_ops.get_worktree_path("main") == "/path/to/main"
+    assert git_ops.get_worktree_path("nonexistent") is None
+
+    # Error case
+    def _fail(cmd, check=True):  # noqa: ANN001, ARG001
+        raise git_ops.subprocess.CalledProcessError(1, cmd)
+
+    monkeypatch.setattr(git_ops, "run", _fail)
+    assert git_ops.get_worktree_path("feature") is None

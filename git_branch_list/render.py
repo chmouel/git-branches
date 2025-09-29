@@ -183,6 +183,7 @@ def format_branch_info(
     status: str = "",
     pr_info: tuple[str, str] | None = None,
     is_own_pr: bool = False,
+    is_worktree: bool = False,
 ) -> str:
     cached = get_last_commit_from_cache(full_ref)
     if cached:
@@ -216,7 +217,12 @@ def format_branch_info(
     else:
         formatted_date = "unknown"
 
-    branch_color = colors.current if is_current else colors.local
+    if is_current:
+        branch_color = colors.current
+    elif is_worktree:
+        branch_color = colors.magenta
+    else:
+        branch_color = colors.local
     branch_width = 40
     display_branch = truncate_display(branch, branch_width)
     hash_width = 8

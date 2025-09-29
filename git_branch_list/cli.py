@@ -13,6 +13,8 @@ from .git_ops import (
     ensure_git_repo,
     get_current_branch,
     get_last_commit_from_cache,
+    get_worktree_path,
+    is_branch_in_worktree,
     iter_local_branches,
     iter_remote_branches,
     remote_ssh_url,
@@ -134,7 +136,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _build_rows_local(
-    show_status: bool, limit: int | None, colors: Colors, pr_only: bool = False, no_wip: bool = False, no_pr: bool = False, exclude_pattern: str | None = None
+    show_status: bool,
+    limit: int | None,
+    colors: Colors,
+    pr_only: bool = False,
+    no_wip: bool = False,
+    no_pr: bool = False,
+    exclude_pattern: str | None = None,
 ) -> list[tuple[str, str]]:
     current = get_current_branch()
     rows: list[tuple[str, str]] = []
@@ -224,12 +232,32 @@ def _build_rows_local(
                     current_user = github._get_current_github_user()  # noqa: SLF001
                     is_own_pr = pr_author == current_user and current_user != ""
 
-        row = format_branch_info(b, b, is_current, colors, maxw, status=status, pr_info=pr_info, is_own_pr=is_own_pr)
+        # Check if branch is in a worktree
+        is_worktree_branch = is_branch_in_worktree(b)
+
+        row = format_branch_info(
+            b,
+            b,
+            is_current,
+            colors,
+            maxw,
+            status=status,
+            pr_info=pr_info,
+            is_own_pr=is_own_pr,
+            is_worktree=is_worktree_branch,
+        )
         rows.append((row, b))
     return rows
 
 
-def _build_rows_remote(remote: str, limit: int | None, colors: Colors, no_wip: bool = False, no_pr: bool = False, exclude_pattern: str | None = None) -> list[tuple[str, str]]:
+def _build_rows_remote(
+    remote: str,
+    limit: int | None,
+    colors: Colors,
+    no_wip: bool = False,
+    no_pr: bool = False,
+    exclude_pattern: str | None = None,
+) -> list[tuple[str, str]]:
     rows: list[tuple[str, str]] = []
     maxw = os.get_terminal_size().columns if sys.stdout.isatty() else 120
     branches = list(iter_remote_branches(remote, limit))
@@ -304,8 +332,19 @@ def _build_rows_remote(remote: str, limit: int | None, colors: Colors, no_wip: b
                     current_user = github._get_current_github_user()  # noqa: SLF001
                     is_own_pr = pr_author == current_user and current_user != ""
 
+        # Check if branch is in a worktree
+        is_worktree_branch = is_branch_in_worktree(b)
+
         row = format_branch_info(
-            b, f"{remote}/{b}", False, colors, maxw, status=status, pr_info=pr_info, is_own_pr=is_own_pr
+            b,
+            f"{remote}/{b}",
+            False,
+            colors,
+            maxw,
+            status=status,
+            pr_info=pr_info,
+            is_own_pr=is_own_pr,
+            is_worktree=is_worktree_branch,
         )
         rows.append((row, b))
     return rows
@@ -332,7 +371,9 @@ def interactive(args: argparse.Namespace) -> int:
             if args.no_color:
                 preview_cmd.append("-C")
             preview_cmd += ["-p", f"{remote}/{{2}}"]
-            rows = _build_rows_remote(remote, limit, colors, args.no_wip, args.no_pr, args.exclude_pattern)
+            rows = _build_rows_remote(
+                remote, limit, colors, args.no_wip, args.no_pr, args.exclude_pattern
+            )
             selected = fzf_select(
                 rows, header=header, preview_cmd=preview_cmd, multi=True, extra_binds=None
             )
@@ -356,7 +397,9 @@ def interactive(args: argparse.Namespace) -> int:
             if args.no_color:
                 preview_cmd.append("-C")
             preview_cmd += ["-p", "{2}"]
-            rows = _build_rows_local(False, limit, colors, False, args.no_wip, args.no_pr, args.exclude_pattern)
+            rows = _build_rows_local(
+                False, limit, colors, False, args.no_wip, args.no_pr, args.exclude_pattern
+            )
             # After deleting a branch inline, reload the list
             reload_parts = [f"{exe}", "--emit-local-rows"]
             if args.no_wip:
@@ -412,6 +455,16 @@ def interactive(args: argparse.Namespace) -> int:
         if args.list_only:
             print(sel)
             return 0
+
+        # Check if branch is in a worktree
+        if is_branch_in_worktree(sel):
+            worktree_path = get_worktree_path(sel)
+            if worktree_path:
+                print(f"Branch '{sel}' is checked out in worktree: {worktree_path}")
+            else:
+                print(f"Branch '{sel}' is checked out in a worktree")
+            return 0
+
         try:
             run(["git", "show-ref", "--verify", "--quiet", f"refs/heads/{sel}"], check=True)
             if _is_workdir_dirty():
@@ -437,7 +490,9 @@ def interactive(args: argparse.Namespace) -> int:
     if args.no_color:
         preview_cmd.append("-C")
     preview_cmd += ["-p", "{2}"]
-    rows = _build_rows_local(args.show_status, limit, colors, args.pr_only, args.no_wip, args.no_pr, args.exclude_pattern)
+    rows = _build_rows_local(
+        args.show_status, limit, colors, args.pr_only, args.no_wip, args.no_pr, args.exclude_pattern
+    )
     # After deleting a branch inline, reload the list keeping flags consistent
     reload_parts: list[str] = [exe, "--emit-local-rows"]
     if args.show_status:
@@ -489,6 +544,16 @@ def interactive(args: argparse.Namespace) -> int:
     if args.list_only:
         print(sel)
         return 0
+
+    # Check if branch is in a worktree
+    if is_branch_in_worktree(sel):
+        worktree_path = get_worktree_path(sel)
+        if worktree_path:
+            print(f"Branch '{sel}' is checked out in worktree: {worktree_path}")
+        else:
+            print(f"Branch '{sel}' is checked out in a worktree")
+        return 0
+
     if _is_workdir_dirty():
         print(
             "Error: Uncommitted changes detected. Please commit or stash before checkout.",
@@ -546,10 +611,25 @@ def main(argv: list[str] | None = None) -> int:
                 if args.show_status and not args.show_status_all and not limit:
                     limit = default_limit_branch_status
                 if args.emit_local_rows:
-                    rows = _build_rows_local(args.show_status, limit, colors, args.pr_only, args.no_wip, args.no_pr, args.exclude_pattern)
+                    rows = _build_rows_local(
+                        args.show_status,
+                        limit,
+                        colors,
+                        args.pr_only,
+                        args.no_wip,
+                        args.no_pr,
+                        args.exclude_pattern,
+                    )
                 else:
                     assert args.emit_remote_rows is not None
-                    rows = _build_rows_remote(args.emit_remote_rows, limit, colors, args.no_wip, args.no_pr, args.exclude_pattern)
+                    rows = _build_rows_remote(
+                        args.emit_remote_rows,
+                        limit,
+                        colors,
+                        args.no_wip,
+                        args.no_pr,
+                        args.exclude_pattern,
+                    )
                 for shown, value in rows:
                     print(f"{shown}\t{value}")
                 return 0
