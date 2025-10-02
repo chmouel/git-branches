@@ -17,23 +17,48 @@ def fzf_select(
     import shlex
 
     input_text = "\n".join(f"{shown}\t{value}" for shown, value in rows)
+
+    # Enhanced fzf styling for better visual appearance
     cmd = [
         "fzf",
         "--reverse",
         "--ansi",
         "--delimiter=\t",
         "--with-nth=1",
-        "--header",
+        "--footer",
         header,
-        "--preview-window=top:50%",
+        "--preview-window=bottom:75%:nohidden:wrap",
+        "--border=rounded",
+        "--color=footer:italic:bold,border:magenta,prompt:bright-magenta,pointer:bright-cyan,marker:bright-cyan",
+        "--prompt=❯ ",
+        "--pointer=❯",
+        "--marker=•",
     ]
+
+    # Default key bindings for better navigation
+    default_binds = [
+        "alt-n:next-history",
+        "alt-p:previous-history",
+        "ctrl-j:preview-down",
+        "ctrl-k:preview-up",
+        "ctrl-n:down",
+        "ctrl-p:up",
+        "ctrl-d:change-preview-window(right:wrap|down,70%:wrap)",
+        "ctrl-u:preview-half-page-up",
+    ]
+
     if preview_cmd:
         cmd.extend(["--preview", " ".join(shlex.quote(x) for x in preview_cmd)])
     if multi:
         cmd.append("--multi")
+
+    # Combine default binds with extra binds
+    all_binds = default_binds[:]
     if extra_binds:
-        for b in extra_binds:
-            cmd.extend(["--bind", b])
+        all_binds.extend(extra_binds)
+
+    if all_binds:
+        cmd.extend(["--bind", ",".join(all_binds)])
 
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
     assert proc.stdin is not None and proc.stdout is not None
@@ -67,7 +92,11 @@ def select_remote() -> str:
             "-1",
             "--height=10",
             "--reverse",
-            "--prompt=Select remote: ",
+            "--border=rounded",
+            "--color=footer:italic:bold,border:magenta,prompt:bright-magenta,pointer:bright-cyan,marker:bright-cyan",
+            "--prompt=❯ Select remote: ",
+            "--pointer=❯",
+            "--marker=•",
             "--preview",
             "git remote get-url {}",
             "--preview-window=down:2:wrap",

@@ -21,6 +21,7 @@ from .git_ops import (
     run,
 )
 from .render import Colors, format_branch_info, setup_colors
+from .status_preview import print_current_status_preview
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -113,6 +114,30 @@ def build_parser() -> argparse.ArgumentParser:
         dest="exclude_pattern",
         help="Exclude branches matching regex pattern (e.g., --exclude='SRVKP.*')",
     )
+    p.add_argument(
+        "--jira-pattern",
+        metavar="REGEX",
+        dest="jira_pattern",
+        help="Regex pattern for JIRA ticket detection (e.g., 'PROJ-\\d+', default: 'SRVKP-\\d+')",
+    )
+    p.add_argument(
+        "--jira-url",
+        metavar="URL",
+        dest="jira_url",
+        help="JIRA base URL for ticket links (default: https://issues.redhat.com)",
+    )
+    p.add_argument(
+        "--no-jira",
+        action="store_true",
+        dest="no_jira",
+        help="Disable JIRA ticket integration in previews",
+    )
+    p.add_argument(
+        "--base-branch",
+        metavar="BRANCH",
+        dest="base_branch",
+        help="Base branch for comparisons (default: main)",
+    )
     p.add_argument("-h", "--help", action="help", help="Show this help")
     p.add_argument("-o", dest="open_ref", metavar="REF", help=argparse.SUPPRESS)
     p.add_argument("-p", dest="preview_ref", metavar="REF", help=argparse.SUPPRESS)
@@ -130,6 +155,12 @@ def build_parser() -> argparse.ArgumentParser:
         dest="emit_remote_rows",
         metavar="REMOTE",
         help=argparse.SUPPRESS,
+    )
+    p.add_argument(
+        "--status",
+        action="store_true",
+        dest="show_current_status",
+        help="Show current git status and unpushed changes preview",
     )
     p.add_argument("args", nargs=argparse.REMAINDER, help=argparse.SUPPRESS)
     return p
@@ -460,9 +491,9 @@ def interactive(args: argparse.Namespace) -> int:
         if is_branch_in_worktree(sel):
             worktree_path = get_worktree_path(sel)
             if worktree_path:
-                print(f"Branch '{sel}' is checked out in worktree: {worktree_path}")
+                print(worktree_path)
             else:
-                print(f"Branch '{sel}' is checked out in a worktree")
+                print(sel)
             return 0
 
         try:
@@ -549,9 +580,9 @@ def interactive(args: argparse.Namespace) -> int:
     if is_branch_in_worktree(sel):
         worktree_path = get_worktree_path(sel)
         if worktree_path:
-            print(f"Branch '{sel}' is checked out in worktree: {worktree_path}")
+            print(worktree_path)
         else:
-            print(f"Branch '{sel}' is checked out in a worktree")
+            print(sel)
         return 0
 
     if _is_workdir_dirty():
@@ -587,6 +618,10 @@ def main(argv: list[str] | None = None) -> int:
             os.environ["GIT_BRANCHES_REFRESH"] = "1"
         if args.checks:
             os.environ["GIT_BRANCHES_SHOW_CHECKS"] = "1"
+        if args.show_current_status:
+            ensure_git_repo(required=True)
+            print_current_status_preview(args.no_color)
+            return 0
         if (
             args.preview_ref
             or args.open_ref
@@ -601,7 +636,14 @@ def main(argv: list[str] | None = None) -> int:
             if args.preview_ref:
                 ref = args.preview_ref
                 if ref:
-                    github.preview_branch(ref, no_color=args.no_color)
+                    github.preview_branch(
+                        ref,
+                        no_color=args.no_color,
+                        jira_pattern=args.jira_pattern,
+                        jira_url=args.jira_url,
+                        no_jira=args.no_jira,
+                        base_branch=args.base_branch,
+                    )
                 return 0
             # emit rows for fzf reloads
             if args.emit_local_rows or args.emit_remote_rows:

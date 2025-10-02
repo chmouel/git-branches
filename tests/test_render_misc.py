@@ -33,7 +33,7 @@ def test_format_branch_info_with_cache_and_links(monkeypatch):
 
 def test_git_log_oneline_with_and_without_colors(monkeypatch):
     # No colors: passthrough
-    monkeypatch.setattr(render, "run", lambda cmd: types.SimpleNamespace(stdout="x\n"))
+    monkeypatch.setattr(render, "run", lambda cmd, **kwargs: types.SimpleNamespace(stdout="x\n"))
     assert render.git_log_oneline("ref", colors=None) == "x\n"
 
     # With colors and link building

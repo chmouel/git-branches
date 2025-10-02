@@ -55,7 +55,7 @@ def test_fzf_select_builds_command_and_parses(monkeypatch):
     cmd = calls[0]
     assert cmd[0] == "fzf"
     assert "--preview" in cmd
-    assert "--header" in cmd
+    assert "--footer" in cmd
     assert "--multi" in cmd
     assert cmd.count("--bind") == 1
 

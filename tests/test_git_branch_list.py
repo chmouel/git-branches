@@ -1,5 +1,5 @@
 # pylint: disable=missing-function-docstring,missing-module-docstring,missing-class-docstring,import-error,protected-access,too-few-public-methods,broad-exception-raised,unused-argument
-from git_branch_list import cli, git_ops, github, render
+from git_branch_list import cli, git_ops, github, render, worktrees
 
 
 def test_truncate_display():
@@ -115,44 +115,306 @@ def test_branch_pushed_status_icons(monkeypatch):
 
 
 def test_preview_header_variants(monkeypatch, capsys):
-    # Avoid git config lookups for colors in preview
-    monkeypatch.setattr(render, "setup_colors", lambda no_color=False: render.Colors())
+    # Mock enhanced preview dependencies
+    from git_branch_list import enhanced_preview
 
     def run_case(state: str, draft: bool, merged: bool):
+        # Mock the gh command to return PR data
+        pr_data = {
+            "state": state.upper(),
+            "number": 123,
+            "title": "My Title",
+            "isDraft": draft,
+            "mergeStateStatus": "CLEAN",
+            "statusCheckRollup": None,
+        }
+
+        monkeypatch.setattr(enhanced_preview, "_get_gh_pr_info", lambda branch, cwd=None: pr_data)
         monkeypatch.setattr(
-            github,
-            "_find_pr_for_ref",
-            lambda ref: (
-                "123",
-                "deadbeef",
-                state,
-                "My Title",
-                draft,
-                "now" if merged else "",
-                ("owner", "repo"),
-                [],
-                [],
-                {},
-                "PR Body",
-            ),
+            enhanced_preview,
+            "_run_cmd",
+            lambda cmd, cwd=None, check=False: "• deadbeef LOG\ncommit message\n",
         )
-        monkeypatch.setattr(github, "git_log_oneline", lambda ref, n=10, colors=None: "LOG\n")
+
         github.preview_branch("feature/x")
         s = capsys.readouterr().out
         assert "#123" in s
         assert "My Title" in s
-        assert "LOG" in s
-        assert "PR Body" in s
+        assert "LOG" in s or "commit message" in s
+
         if merged:
-            assert "Merged" in s
+            assert "MERGED" in s.upper()
         elif draft:
-            assert "Draft" in s
+            assert "DRAFT" in s.upper()
         else:
-            assert "Open" in s
+            assert "OPEN" in s.upper()
 
     run_case("open", False, False)
     run_case("open", True, False)
-    run_case("closed", False, True)
+    run_case("merged", False, True)
+
+
+def test_format_worktree_summary(monkeypatch):
+    import types
+
+    def fake_run(cmd, cwd=None, check=True):  # noqa: ANN001, ARG001
+        mapping = {
+            ("git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"): (
+                "origin/main\n",
+                0,
+            ),
+            ("git", "rev-list", "--count", "origin/main..HEAD"): ("2\n", 0),
+            ("git", "rev-list", "--count", "HEAD..origin/main"): ("1\n", 0),
+            ("git", "status", "--porcelain"): ("M file1\n?? newfile\n", 0),
+            (
+                "git",
+                "log",
+                "-1",
+                "--decorate=short",
+                "--pretty=%(decorate)",
+            ): (" (HEAD -> feature)\n", 0),
+        }
+        stdout, returncode = mapping.get(tuple(cmd), ("", 0))
+        return types.SimpleNamespace(stdout=stdout, returncode=returncode)
+
+    monkeypatch.setattr(github, "run", fake_run)
+    colors = render.Colors()  # no colors so output is easy to assert
+    summary = github._format_worktree_summary("feature", "/tmp/worktree", colors)
+    assert "Branch: feature" in summary
+    assert "Path: /tmp/worktree" in summary
+    assert "Tracking: origin/main +2 -1" in summary
+    assert "Changes: staged:1 untracked:1" in summary
+    assert "HEAD: HEAD -> feature" in summary
+
+
+def test_preview_branch_with_enhanced_style(monkeypatch, capsys):
+    # Test that preview_branch now uses enhanced preview format
+    from git_branch_list import enhanced_preview
+
+    # Mock enhanced preview components
+    pr_data = {
+        "state": "OPEN",
+        "number": 123,
+        "title": "Test PR",
+        "isDraft": False,
+        "mergeStateStatus": "CLEAN",
+        "statusCheckRollup": None,
+    }
+
+    monkeypatch.setattr(enhanced_preview, "_get_gh_pr_info", lambda branch, cwd=None: pr_data)
+    monkeypatch.setattr(
+        enhanced_preview, "_run_cmd", lambda cmd, cwd=None, check=False: "• deadbeef test commit\n"
+    )
+
+    github.preview_branch("feature/x")
+    out = capsys.readouterr().out
+
+    # Verify enhanced preview contains expected elements
+    assert "Branch:" in out  # enhanced branch header
+    assert "feature/x" in out  # branch name
+    assert "#123" in out  # PR number
+    assert "Test PR" in out  # PR title
+
+
+def test_preview_worktree_sections(monkeypatch, capsys):
+    monkeypatch.setattr(render, "setup_colors", lambda no_color=False: render.Colors())
+    monkeypatch.setattr(github, "_branch_for_path", lambda path: "feature")
+    monkeypatch.setattr(
+        github,
+        "_format_worktree_summary",
+        lambda branch, path, colors: "WORKTREE",
+    )
+    monkeypatch.setattr(github, "_build_pr_section", lambda ref, colors, cols: "PR")
+    monkeypatch.setattr(
+        github,
+        "_build_log_section",
+        lambda ref, colors, limit, cwd: "LOG",
+    )
+    monkeypatch.setattr(github, "_build_diff_section", lambda path, colors: "DIFF")
+
+    github.preview_worktree("/tmp/worktree")
+    out = capsys.readouterr().out.strip()
+    separator = "\n" + "─" * 80 + "\n"
+    parts = out.split(separator)
+    assert parts == ["WORKTREE", "PR", "LOG", "DIFF"]
+
+
+def test_collect_worktrees_sorting(monkeypatch):
+    import types
+
+    monkeypatch.delenv("GIT_BRANCHES_WORKTREE_BASEDIR", raising=False)
+    monkeypatch.delenv("PM_BASEDIR", raising=False)
+
+    listings = (
+        "worktree /repo\n"
+        "HEAD 1111111111111111111111111111111111111111\n"
+        "branch refs/heads/main\n\n"
+        "worktree /repo/feature\n"
+        "HEAD 2222222222222222222222222222222222222222\n"
+        "branch refs/heads/feature\n"
+    )
+
+    def fake_run(cmd, cwd=None, check=True):  # noqa: ANN001, ARG001
+        key = (tuple(cmd), cwd)
+        if key == (("git", "worktree", "list", "--porcelain"), None):
+            return types.SimpleNamespace(stdout=listings, returncode=0)
+        if key == (("git", "rev-parse", "--show-toplevel"), None):
+            return types.SimpleNamespace(stdout="/repo\n", returncode=0)
+        if key == (("git", "log", "-1", "--format=%ct|%h|%s", "HEAD"), "/repo"):
+            return types.SimpleNamespace(
+                stdout="1700000000|abc1234|feat: main commit\n", returncode=0
+            )
+        if key == (("git", "log", "-1", "--format=%ct|%h|%s", "HEAD"), "/repo/feature"):
+            return types.SimpleNamespace(
+                stdout="1700000500|def5678|fix: feature bug\n", returncode=0
+            )
+        if key == (("git", "status", "--porcelain"), "/repo"):
+            return types.SimpleNamespace(stdout="", returncode=0)
+        if key == (("git", "status", "--porcelain"), "/repo/feature"):
+            return types.SimpleNamespace(stdout="M file1\n?? newfile\n", returncode=0)
+        if key == (("git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"), "/repo"):
+            return types.SimpleNamespace(stdout="origin/main\n", returncode=0)
+        if key == (
+            ("git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"),
+            "/repo/feature",
+        ):
+            return types.SimpleNamespace(stdout="origin/feature\n", returncode=0)
+        if key == (("git", "rev-list", "--count", "origin/main..HEAD"), "/repo"):
+            return types.SimpleNamespace(stdout="0\n", returncode=0)
+        if key == (("git", "rev-list", "--count", "HEAD..origin/main"), "/repo"):
+            return types.SimpleNamespace(stdout="0\n", returncode=0)
+        if key == (("git", "rev-list", "--count", "origin/feature..HEAD"), "/repo/feature"):
+            return types.SimpleNamespace(stdout="2\n", returncode=0)
+        if key == (("git", "rev-list", "--count", "HEAD..origin/feature"), "/repo/feature"):
+            return types.SimpleNamespace(stdout="1\n", returncode=0)
+        return types.SimpleNamespace(stdout="", returncode=0)
+
+    monkeypatch.setattr(worktrees, "run", fake_run)
+
+    infos = worktrees.collect_worktrees()
+    assert [wt.path for wt in infos] == ["/repo/feature", "/repo"]
+    feature = infos[0]
+    assert feature.branch == "feature"
+    assert feature.dirty is True
+    assert feature.ahead == 2
+    assert feature.behind == 1
+    assert feature.short_sha == "def5678"
+    assert feature.commit_epoch == 1700000500
+
+
+def test_collect_worktrees_from_basedir(monkeypatch, tmp_path):
+    import types
+
+    basedir = tmp_path / "trees"
+    basedir.mkdir()
+    (basedir / "mainrepo").mkdir()
+    (basedir / "feature").mkdir()
+
+    monkeypatch.setenv("GIT_BRANCHES_WORKTREE_BASEDIR", str(basedir))
+    monkeypatch.setenv("PM_MAIN", "mainrepo")
+
+    def fake_run(cmd, cwd=None, check=True):  # noqa: ANN001, ARG001
+        key = (tuple(cmd), cwd)
+        true = types.SimpleNamespace(stdout="true\n", returncode=0)
+        empty = types.SimpleNamespace(stdout="", returncode=0)
+        if key == (("git", "rev-parse", "--is-inside-work-tree"), str(basedir / "mainrepo")):
+            return true
+        if key == (("git", "rev-parse", "--is-inside-work-tree"), str(basedir / "feature")):
+            return true
+        if key == (("git", "rev-parse", "--abbrev-ref", "HEAD"), str(basedir / "mainrepo")):
+            return types.SimpleNamespace(stdout="main\n", returncode=0)
+        if key == (("git", "rev-parse", "--abbrev-ref", "HEAD"), str(basedir / "feature")):
+            return types.SimpleNamespace(stdout="feature-branch\n", returncode=0)
+        if key == (("git", "log", "-1", "--format=%ct|%h|%s", "HEAD"), str(basedir / "mainrepo")):
+            return types.SimpleNamespace(
+                stdout="1700000000|aaa1111|feat: main commit\n", returncode=0
+            )
+        if key == (("git", "log", "-1", "--format=%ct|%h|%s", "HEAD"), str(basedir / "feature")):
+            return types.SimpleNamespace(
+                stdout="1700000500|bbb2222|fix: feature bug\n", returncode=0
+            )
+        if key == (("git", "status", "--porcelain"), str(basedir / "mainrepo")):
+            return empty
+        if key == (("git", "status", "--porcelain"), str(basedir / "feature")):
+            return types.SimpleNamespace(stdout="M file1\n", returncode=0)
+        if key == (
+            ("git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"),
+            str(basedir / "mainrepo"),
+        ):
+            return types.SimpleNamespace(stdout="origin/main\n", returncode=0)
+        if key == (
+            ("git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"),
+            str(basedir / "feature"),
+        ):
+            return types.SimpleNamespace(stdout="origin/feature\n", returncode=0)
+        if key == (("git", "rev-list", "--count", "origin/main..HEAD"), str(basedir / "mainrepo")):
+            return types.SimpleNamespace(stdout="0\n", returncode=0)
+        if key == (("git", "rev-list", "--count", "HEAD..origin/main"), str(basedir / "mainrepo")):
+            return types.SimpleNamespace(stdout="0\n", returncode=0)
+        if key == (
+            ("git", "rev-list", "--count", "origin/feature..HEAD"),
+            str(basedir / "feature"),
+        ):
+            return types.SimpleNamespace(stdout="1\n", returncode=0)
+        if key == (
+            ("git", "rev-list", "--count", "HEAD..origin/feature"),
+            str(basedir / "feature"),
+        ):
+            return types.SimpleNamespace(stdout="2\n", returncode=0)
+        return empty
+
+    monkeypatch.setattr(worktrees, "run", fake_run)
+
+    infos = worktrees.collect_worktrees()
+    assert [wt.name for wt in infos] == ["feature", "mainrepo"]
+    feature = infos[0]
+    assert feature.branch == "feature-branch"
+    assert feature.dirty is True
+    assert feature.short_sha == "bbb2222"
+    assert feature.ahead == 1
+    assert feature.behind == 2
+
+
+def test_format_worktree_row(monkeypatch):
+    monkeypatch.setattr(worktrees, "term_cols", lambda: 120)
+    colors = render.Colors()
+    info = worktrees.WorktreeInfo(
+        path="/repo/feature",
+        name="feature",
+        branch="feature",
+        short_sha="def5678",
+        commit_epoch=1700000600,
+        subject="fix: feature bug",
+        dirty=True,
+        tracking="origin/feature",
+        ahead=3,
+        behind=2,
+        is_current=False,
+    )
+    row = worktrees.format_worktree_row(info, colors)
+    assert "feature" in row
+    assert "def5678" in row
+    assert "dirty" in row
+    assert "↑3" in row
+    assert "↓2" in row
+    assert "/repo/feature" in row
+
+
+def test_worktree_cache_helpers(monkeypatch, tmp_path):
+    cache_dir = tmp_path / "cache"
+    last_file = cache_dir / "last"
+    monkeypatch.setattr(worktrees, "CACHE_DIR", cache_dir)
+    monkeypatch.setattr(worktrees, "LAST_WORKTREE_FILE", last_file)
+
+    worktrees.clear_last_worktree()
+    assert worktrees.load_last_worktree() is None
+    worktrees.save_last_worktree("/repo/feature")
+    assert worktrees.load_last_worktree() == "/repo/feature"
+    worktrees.clear_last_worktree()
+    assert worktrees.load_last_worktree() is None
+
+
+# Worktree functionality has been removed
 
 
 def _reset_github_caches():
@@ -421,9 +683,9 @@ def test_local_checkout_worktree_detection(monkeypatch, capsys):
     assert rc == 0
     # Should not have called git checkout
     assert not any(c[:2] == ["git", "checkout"] for c in calls)
-    # Should have printed worktree path
+    # Should have printed worktree path only
     captured = capsys.readouterr()
-    assert "Branch 'feature' is checked out in worktree: /path/to/worktree" in captured.out
+    assert captured.out.strip() == "/path/to/worktree"
 
 
 def test_remote_checkout_worktree_detection(monkeypatch, capsys):
@@ -453,9 +715,9 @@ def test_remote_checkout_worktree_detection(monkeypatch, capsys):
     assert rc == 0
     # Should not have called git checkout
     assert not any(c[:2] == ["git", "checkout"] for c in calls)
-    # Should have printed worktree path
+    # Should have printed worktree path only
     captured = capsys.readouterr()
-    assert "Branch 'feature' is checked out in worktree: /path/to/worktree" in captured.out
+    assert captured.out.strip() == "/path/to/worktree"
 
 
 def test_local_checkout_block_on_dirty(monkeypatch):

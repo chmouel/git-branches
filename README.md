@@ -31,16 +31,24 @@ git-branches -s   # add -S to show all
 # Show GitHub Actions status (fetch over network)
 git-branches --checks
 
+# Current status with unpushed changes and PR info
+git-branches --status
+
+# Custom JIRA pattern and base branch
+git-branches --jira-pattern "PROJ-\d+" --base-branch develop
+
 # Super fast offline mode (no network, cached data only)
 git-branches --fast
 ```
 
 ## Highlights
 
-- fzf-native UX: reverse list, previews, key bindings, multi-select for deletes.
-- Rich preview: PR status (Open/Draft/Merged/Closed), OSC-8 link to the PR, CI combined status, and the last 10 commits with colors.
-- GitHub awareness: shows whether a local branch exists on the remote (`-s`) and the CI status for the PR head commit.
-- One-keystroke actions: checkout, open PR (`ctrl-o`), delete quickly (`alt-k`).
+- **fzf-native UX**: reverse list, previews, key bindings, multi-select for deletes.
+- **Rich preview**: PR status (Open/Draft/Merged/Closed), OSC-8 clickable links to PRs, CI combined status, and the last 10 commits with colors.
+- **Clickable terminal links**: Branch names, PR numbers, JIRA tickets, and URLs are clickable using OSC 8 escape sequences (supported by modern terminals).
+- **JIRA integration**: Automatically detect JIRA tickets in branch names and show ticket details using [jayrah](https://github.com/ankitpokhrel/jira-cli) with optional [gum](https://github.com/charmbracelet/gum) formatting.
+- **GitHub awareness**: shows whether a local branch exists on the remote (`-s`) and the CI status for the PR head commit.
+- **One-keystroke actions**: checkout, open PR (`ctrl-o`), delete quickly (`alt-k`).
 
 ## Requirements
 
@@ -48,6 +56,9 @@ git-branches --fast
 - Python 3.12+ (uv-managed)
 - Optional: `GITHUB_TOKEN` (improves rate limits and enables private repos)
 - Optional: a Nerd Font for icons (fallback text is still readable)
+- Optional: [jayrah](https://github.com/ankitpokhrel/jira-cli) for JIRA ticket integration
+- Optional: [gum](https://github.com/charmbracelet/gum) for enhanced JIRA ticket formatting
+- Optional: [gh](https://cli.github.com/) GitHub CLI for enhanced PR information in previews
 
 ## Installation 🍺
 
@@ -84,6 +95,7 @@ brew install --HEAD chmouel/git-branches/git-branches
 
 ## Command-line options 🧭
 
+### Core Options
 - `-r`: Browse remote branches (choose remote via fzf)
 - `-R <remote>`: Browse a specific remote (e.g., origin)
 - `-d`: Delete local branches (multi-select)
@@ -96,6 +108,13 @@ brew install --HEAD chmouel/git-branches/git-branches
 - `--fast`: Super fast offline mode (no network calls, minimal processing)
 - `--refresh`: Force refresh of PR cache (ignore stale cache and ETag)
 - `--checks`: Fetch and show GitHub Actions status (preview and a small indicator in rows). Without this flag, cached results (if available) are still displayed, but no network calls are made for checks.
+
+### Preview & Integration Options
+- `--status`: Show current git status and unpushed changes preview
+- `--jira-pattern REGEX`: Custom regex pattern for JIRA ticket detection (e.g., `'PROJ-\d+'`, default: `'SRVKP-\d+'`)
+- `--jira-url URL`: JIRA base URL for ticket links (default: `https://issues.redhat.com`)
+- `--no-jira`: Disable JIRA ticket integration in previews
+- `--base-branch BRANCH`: Base branch for comparisons (default: `main`)
 
 ## Key bindings (fzf)
 
@@ -161,7 +180,7 @@ To improve performance and reduce API calls, `git-branches` batches git metadata
 
 - Git metadata: branches and last-commit info are fetched via a single `git for-each-ref` call.
 - PR list: fetched via REST in one call (`/pulls?state=open&per_page=100`) with ETag support; a small slice of recently closed PRs is also fetched to catch merges.
-- Disk cache: `~/.cache/git-branches/prs.json` with `timestamp`, `etag`, and a `{head.ref -> PR}` map. Default TTL: 5 minutes.
+- Disk cache: `~/.cache/git-branches/prs.json` (configurable via `XDG_CACHE_HOME` or `GIT_BRANCHES_CACHE_DIR`) with `timestamp`, `etag`, and a `{head.ref -> PR}` map. Default TTL: 5 minutes.
 
 Controls:
 
@@ -172,12 +191,65 @@ Controls:
 
 ## Environment Variables 🔧
 
+### GitHub & Performance
 - `GIT_BRANCHES_OFFLINE=1`: Run fully offline (no GitHub requests).
 - `GIT_BRANCHES_NO_CACHE=1`: Bypass disk/memory caching and ETag.
 - `GIT_BRANCHES_REFRESH=1`: Force refresh of caches for this run.
 - `GIT_BRANCHES_PREFETCH_DETAILS=1`: Prefetch PR details (GraphQL batches).
 - `GIT_BRANCHES_SHOW_CHECKS=1`: Allow fetching Actions status (same as `--checks`). If unset, cached checks are still displayed; no fetches.
 - `GIT_BRANCHES_NO_PROGRESS=1`: Disable spinners/progress indicators.
+
+### JIRA Integration
+- `GIT_BRANCHES_JIRA_ENABLED=1`: Enable/disable JIRA integration (default: enabled).
+- `GIT_BRANCHES_JIRA_PATTERN=REGEX`: Regex pattern for JIRA ticket detection (default: `SRVKP-\d+`).
+- `GIT_BRANCHES_JIRA_BASE_URL=URL`: JIRA instance URL (default: `https://issues.redhat.com`).
+
+### Customization
+- `GIT_BRANCHES_BASE_BRANCH=BRANCH`: Base branch for comparisons (default: `main`).
+- `GIT_BRANCHES_CACHE_DIR=PATH`: Custom cache directory location.
+- `XDG_CACHE_HOME=PATH`: Standard XDG cache directory (respects XDG Base Directory Specification).
+
+## Advanced Features 🚀
+
+### JIRA Integration
+git-branches can automatically detect JIRA tickets in branch names and display ticket information in the preview:
+
+```bash
+# Default pattern matches SRVKP-1234 format
+git-branches  # Branch: feature/SRVKP-1234-add-feature shows JIRA ticket info
+
+# Customize JIRA pattern for your organization
+git-branches --jira-pattern "PROJ-\d+" --jira-url "https://company.atlassian.net"
+
+# Disable JIRA integration completely
+git-branches --no-jira
+```
+
+**Requirements**: Install [jayrah](https://github.com/ankitpokhrel/jira-cli) for JIRA CLI integration. Optionally install [gum](https://github.com/charmbracelet/gum) for enhanced markdown formatting.
+
+### Current Status Preview
+View detailed git status and unpushed changes:
+
+```bash
+git-branches --status
+```
+
+Shows:
+- Current branch with tracking info
+- Staged, unstaged, and untracked file counts
+- List of changed files with status indicators
+- Unpushed commits with clickable GitHub links
+- PR information if available
+
+### Clickable Terminal Links
+Modern terminals supporting OSC 8 escape sequences will make these elements clickable:
+- **Branch names**: Click to open GitHub branch page
+- **PR numbers**: Click to open pull request
+- **JIRA tickets**: Click to open ticket in JIRA
+- **Commit hashes**: Click to view commit on GitHub
+- **URLs**: Any URL in JIRA content becomes clickable
+
+Supported terminals: iTerm2, Terminal.app (macOS), Windows Terminal, many Linux terminals.
 
 ## Troubleshooting 🛠️
 

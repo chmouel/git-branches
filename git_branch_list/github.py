@@ -8,6 +8,7 @@ import time
 import webbrowser
 
 from .git_ops import run, which
+from .jira_integration import format_jira_section, get_jira_tickets_for_branch
 from .progress import Spinner
 from .render import Colors, format_pr_details, git_log_oneline, setup_colors, truncate_display
 
@@ -17,7 +18,22 @@ except Exception:  # pragma: no cover
     requests = None  # type: ignore
 
 
-CACHE_DIR = os.path.expanduser("~/.cache/git-branches")
+def _get_cache_dir() -> str:
+    """Get cache directory using XDG standard or fallback."""
+    xdg_cache = os.environ.get("XDG_CACHE_HOME")
+    if xdg_cache:
+        return os.path.join(xdg_cache, "git-branches")
+
+    # Check for custom environment variable
+    custom_cache = os.environ.get("GIT_BRANCHES_CACHE_DIR")
+    if custom_cache:
+        return custom_cache
+
+    # Default fallback
+    return os.path.expanduser("~/.cache/git-branches")
+
+
+CACHE_DIR = _get_cache_dir()
 CACHE_FILE = os.path.join(CACHE_DIR, "prs.json")
 _pr_cache: dict[str, dict] = {}
 _pr_details_cache: dict[str, dict] = {}
@@ -25,6 +41,7 @@ _actions_cache: dict[str, dict] = {}
 _actions_disk_loaded: bool = False
 _current_user_cache: str = ""
 CACHE_DURATION_SECONDS = 3000
+_REMOTE_CACHE: set[str] | None = None
 
 
 def _offline() -> bool:
@@ -574,14 +591,191 @@ def _find_pr_for_ref(
     return "", "", "", "", False, "", None, [], [], {}, ""
 
 
-def preview_branch(ref: str, no_color: bool = False) -> None:
-    # Build the PR header, then show recent commits
+def _preview_commit_count() -> int:
+    raw = os.environ.get("FZF_PREVIEW_COMMITS", "").strip()
+    if not raw:
+        return 10
+    try:
+        val = int(raw)
+        return val if val > 0 else 10
+    except ValueError:
+        return 10
 
-    colors = setup_colors(no_color=no_color)
-    cols = int(os.environ.get("FZF_PREVIEW_COLUMNS", "80"))
 
-    # Always show branch name at the top
+def _list_remotes() -> set[str]:
+    global _REMOTE_CACHE
+    if _REMOTE_CACHE is not None:
+        return _REMOTE_CACHE
+    try:
+        cp = run(["git", "remote"], check=False)
+        remotes = {line.strip() for line in cp.stdout.splitlines() if line.strip()}
+    except Exception:
+        remotes = set()
+    _REMOTE_CACHE = remotes
+    return remotes
 
+
+def _normalize_ref_to_branch(ref: str) -> str | None:
+    if not ref:
+        return None
+    if ref.startswith("refs/heads/"):
+        return ref[len("refs/heads/") :]
+    if "/" in ref:
+        remote, branch = ref.split("/", 1)
+        if remote in _list_remotes():
+            return branch
+    return ref
+
+
+def _safe_int(cmd: list[str], cwd: str) -> int:
+    try:
+        cp = run(cmd, cwd=cwd, check=False)
+        text = cp.stdout.strip()
+        return int(text) if text.isdigit() else 0
+    except Exception:
+        return 0
+
+
+def _tracking_line(path: str, colors: Colors) -> str:
+    try:
+        cp = run(
+            ["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+            cwd=path,
+            check=False,
+        )
+    except Exception:
+        return ""
+    tracking = cp.stdout.strip()
+    if not tracking or cp.returncode != 0:
+        return ""
+    ahead = _safe_int(["git", "rev-list", "--count", f"{tracking}..HEAD"], path)
+    behind = _safe_int(["git", "rev-list", "--count", f"HEAD..{tracking}"], path)
+    parts = [
+        f"{colors.grey}Tracking:{colors.reset} {colors.cyan}{tracking}{colors.reset}"
+        if colors.reset
+        else f"Tracking: {tracking}"
+    ]
+    if ahead > 0:
+        parts.append(f"{colors.green}+{ahead}{colors.reset}" if colors.reset else f"+{ahead}")
+    if behind > 0:
+        parts.append(f"{colors.red}-{behind}{colors.reset}" if colors.reset else f"-{behind}")
+    return " ".join(parts)
+
+
+def _status_line(path: str, colors: Colors) -> str:
+    try:
+        cp = run(["git", "status", "--porcelain"], cwd=path, check=False)
+    except Exception:
+        return ""
+    staged = unstaged = untracked = 0
+    for line in cp.stdout.splitlines():
+        if not line:
+            continue
+        x = line[0]
+        y = line[1] if len(line) > 1 else ""
+        if x not in (" ", "?"):
+            staged += 1
+        if y and y != " ":
+            if y == "?":
+                untracked += 1
+            else:
+                unstaged += 1
+        elif x == "?":
+            untracked += 1
+    total = staged + unstaged + untracked
+    if total == 0:
+        return ""
+    parts = ["Changes:"]
+    if staged:
+        parts.append(
+            f"{colors.green}staged:{staged}{colors.reset}" if colors.reset else f"staged:{staged}"
+        )
+    if unstaged:
+        parts.append(
+            f"{colors.yellow}unstaged:{unstaged}{colors.reset}"
+            if colors.reset
+            else f"unstaged:{unstaged}"
+        )
+    if untracked:
+        parts.append(
+            f"{colors.red}untracked:{untracked}{colors.reset}"
+            if colors.reset
+            else f"untracked:{untracked}"
+        )
+    return " ".join(parts)
+
+
+def _head_decoration_line(path: str, colors: Colors) -> str:
+    try:
+        cp = run(
+            ["git", "log", "-1", "--decorate=short", "--pretty=%(decorate)"],
+            cwd=path,
+            check=False,
+        )
+    except Exception:
+        return ""
+    deco = cp.stdout.strip().strip(" ()")
+    if not deco:
+        return ""
+    prefix = f"{colors.blue}HEAD{colors.reset}" if colors.reset else "HEAD"
+    return f"{prefix}: {deco}"
+
+
+def _apply_delta_if_available(diff: str) -> str:
+    if not diff.strip():
+        return ""
+    if not which("delta"):
+        return diff
+    try:
+        proc = subprocess.run(
+            ["delta"],
+            input=diff,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        return proc.stdout or diff
+    except Exception:
+        return diff
+
+
+def _git_diff_output(cmd: list[str], path: str) -> str:
+    try:
+        cp = run(cmd, cwd=path, check=False)
+    except Exception:
+        return ""
+    return _apply_delta_if_available(cp.stdout)
+
+
+def _format_worktree_summary(branch: str, path: str, colors: Colors) -> str:
+    branch_color = colors.magenta or colors.cyan or ""
+    reset = colors.reset or ""
+    path_color = colors.cyan or ""
+    if reset:
+        lines = [
+            f"{colors.green}󰘬{reset} Branch: {branch_color}{branch}{reset}",
+            f"Path: {path_color}{path}{reset}",
+        ]
+    else:
+        lines = [f"Branch: {branch}", f"Path: {path}"]
+    tracking = _tracking_line(path, colors)
+    if tracking:
+        lines.append(tracking)
+    status = _status_line(path, colors)
+    if status:
+        lines.append(status)
+    head = _head_decoration_line(path, colors)
+    if head:
+        lines.append(head)
+    return "\n".join(lines)
+
+
+def _format_branch_header(ref: str, colors: Colors) -> str:
+    prefix = f"{colors.bold}{colors.cyan}Branch{colors.reset}" if colors.reset else "Branch"
+    return f"{prefix}: {ref}"
+
+
+def _build_pr_section(ref: str, colors: Colors, cols: int) -> str:
     (
         pr_num,
         pr_sha,
@@ -595,55 +789,186 @@ def preview_branch(ref: str, no_color: bool = False) -> None:
         latest_reviews,
         body,
     ) = _find_pr_for_ref(ref)
-    if pr_num:
-        if pr_state == "closed":
-            if pr_merged_at:
-                pr_icon = f"{colors.magenta}{colors.reset}"
-                pr_status = "Merged"
-            else:
-                pr_icon = f"{colors.red}{colors.reset}"
-                pr_status = "Closed"
+    if not pr_num:
+        return ""
+    if pr_state == "closed":
+        if pr_merged_at:
+            pr_icon = f"{colors.magenta}{colors.reset}"
+            pr_status = "Merged"
         else:
-            if pr_draft:
-                pr_icon = f"{colors.yellow}{colors.reset}"
-                pr_status = "Draft"
-            else:
-                pr_icon = f"{colors.green}{colors.reset}"
-                pr_status = "Open"
-        base_owner, base_repo = pr_base if pr_base else ("", "")
-        pr_url = f"https://github.com/{base_owner}/{base_repo}/pull/{pr_num}"
-        pr_link = f"\x1b]8;;{pr_url}\x1b\\#{pr_num}\x1b]8;;\x1b\\"
-        header = f"{colors.blue}GitHub{colors.reset} {pr_icon} {colors.italic_on}{pr_status}{colors.italic_off} {pr_link} {colors.bold}{pr_title}{colors.reset}\n"
-        details = format_pr_details(labels, review_requests, latest_reviews, colors)
-        if details:
-            header += details + "\n"
+            pr_icon = f"{colors.red}{colors.reset}"
+            pr_status = "Closed"
+    else:
+        if pr_draft:
+            pr_icon = f"{colors.yellow}{colors.reset}"
+            pr_status = "Draft"
+        else:
+            pr_icon = f"{colors.green}{colors.reset}"
+            pr_status = "Open"
+    base_owner, base_repo = pr_base if pr_base else ("", "")
+    pr_url = f"https://github.com/{base_owner}/{base_repo}/pull/{pr_num}"
+    pr_link = f"\x1b]8;;{pr_url}\x1b\\#{pr_num}\x1b]8;;\x1b\\"
+    header = (
+        f"{colors.blue}GitHub{colors.reset} {pr_icon} {colors.italic_on}{pr_status}{colors.italic_off}"
+        f" {pr_link} {colors.bold}{pr_title}{colors.reset}"
+        if colors.reset
+        else f"GitHub {pr_status} #{pr_num} {pr_title}"
+    )
+    lines = [header]
+    details = format_pr_details(labels, review_requests, latest_reviews, colors)
+    if details:
+        lines.append(details)
 
-        # Append Actions status for this PR head sha: use cache, else fetch if enabled
-        actions = peek_actions_status_for_sha(pr_sha)
-        if not actions and _checks_enabled():
-            actions = get_actions_status_for_sha(pr_base, pr_sha)
-        if actions:
-            icon, label = _actions_status_icon(
-                actions.get("conclusion"), actions.get("status"), colors
-            )
-            run_url = actions.get("html_url") or ""
-            if run_url:
-                link = (
-                    f"\x1b]8;;{run_url}\x1b\\{actions.get('name', '') or 'Workflow'}\x1b]8;;\x1b\\"
-                )
-            else:
-                link = actions.get("name", "Workflow")
-            header += f"{icon} {label}  {link}\n"
+    actions = peek_actions_status_for_sha(pr_sha)
+    if not actions and _checks_enabled():
+        actions = get_actions_status_for_sha(pr_base, pr_sha)
+    if actions:
+        icon, label = _actions_status_icon(actions.get("conclusion"), actions.get("status"), colors)
+        run_url = actions.get("html_url") or ""
+        if run_url:
+            link = f"\x1b]8;;{run_url}\x1b\\{actions.get('name', '') or 'Workflow'}\x1b]8;;\x1b\\"
+        else:
+            link = actions.get("name", "Workflow")
+        lines.append(f"{icon} {label}  {link}" if colors.reset else f"CI: {label} {link}")
 
-        if body:
-            header += "\n" + truncate_display(body, cols * 3) + "\n"
+    if body:
+        lines.append("")
+        lines.append(truncate_display(body, cols * 3))
 
-        sys.stdout.write(header)
-        sys.stdout.write("─" * cols + "\n")
-    branch_header = f"{colors.bold}{colors.cyan}Branch{colors.reset}: {ref}\n"
-    sys.stdout.write(branch_header)
-    sys.stdout.write("─" * cols + "\n")
-    sys.stdout.write(git_log_oneline(ref, n=10, colors=colors))
+    return "\n".join(lines)
+
+
+def _build_log_section(ref: str, colors: Colors, limit: int, cwd: str | None) -> str:
+    log_output = git_log_oneline(ref, n=limit, colors=colors, cwd=cwd)
+    if not log_output:
+        return ""
+    header = (
+        f"{colors.bold}Recent commits ({limit}){colors.reset}"
+        if colors.reset
+        else f"Recent commits ({limit})"
+    )
+    return f"{header}\n{log_output.rstrip()}"
+
+
+def _build_diff_section(path: str, colors: Colors) -> str:
+    staged = _git_diff_output(["git", "diff", "--staged", "--color=always"], path)
+    unstaged = _git_diff_output(["git", "diff", "--color=always"], path)
+    parts: list[str] = []
+    if staged.strip():
+        title = f"{colors.green}Staged diff{colors.reset}" if colors.reset else "Staged diff"
+        parts.append(f"{title}\n{staged.rstrip()}")
+    if unstaged.strip():
+        title = f"{colors.yellow}Unstaged diff{colors.reset}" if colors.reset else "Unstaged diff"
+        parts.append(f"{title}\n{unstaged.rstrip()}")
+    return "\n\n".join(parts)
+
+
+def _build_jira_section(branch_name: str, colors: Colors) -> str:
+    """Build JIRA tickets section for preview."""
+    try:
+        tickets = get_jira_tickets_for_branch(branch_name)
+        return format_jira_section(tickets, colors)
+    except Exception:
+        # Silently fail if JIRA integration is not available or fails
+        return ""
+
+
+def _compose_preview(
+    ref_display: str,
+    pr_ref: str,
+    branch_name: str | None,
+    worktree_path: str | None,
+    colors: Colors,
+    cols: int,
+    commit_limit: int,
+) -> str:
+    sections: dict[str, str] = {}
+    if worktree_path:
+        sections["worktree"] = _format_worktree_summary(
+            branch_name or ref_display, worktree_path, colors
+        )
+    else:
+        sections["branch"] = _format_branch_header(ref_display, colors)
+
+    # Add JIRA integration
+    jira_section = _build_jira_section(branch_name or ref_display, colors)
+    if jira_section:
+        sections["jira"] = jira_section
+
+    if pr_ref:
+        pr_section = _build_pr_section(pr_ref, colors, cols)
+        if pr_section:
+            sections["pr"] = pr_section
+
+    log_ref = "HEAD" if worktree_path else (pr_ref or ref_display)
+    log_section = _build_log_section(log_ref, colors, commit_limit, worktree_path)
+    if log_section:
+        sections["log"] = log_section
+
+    if worktree_path:
+        diff_section = _build_diff_section(worktree_path, colors)
+        if diff_section:
+            sections["diff"] = diff_section
+
+    order = (
+        ["worktree", "jira", "pr", "log", "diff"]
+        if worktree_path
+        else ["jira", "pr", "branch", "log"]
+    )
+    ordered_sections = [sections[key] for key in order if key in sections and sections[key]]
+
+    if not ordered_sections:
+        return ""
+
+    separator = "\n" + "─" * cols + "\n"
+    return separator.join(section.rstrip() for section in ordered_sections)
+
+
+def preview_branch(
+    ref: str,
+    no_color: bool = False,
+    jira_pattern: str | None = None,
+    jira_url: str | None = None,
+    no_jira: bool = False,
+    base_branch: str | None = None,
+) -> None:
+    from .enhanced_preview import print_enhanced_preview
+
+    branch_name = _normalize_ref_to_branch(ref) or ref
+    print_enhanced_preview(
+        branch_name,
+        no_color,
+        jira_pattern=jira_pattern,
+        jira_url=jira_url,
+        no_jira=no_jira,
+        base_branch=base_branch,
+    )
+
+
+def _branch_for_path(path: str) -> str | None:
+    try:
+        cp = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=path, check=False)
+    except Exception:
+        return None
+    if cp.returncode != 0:
+        return None
+    branch = cp.stdout.strip()
+    if not branch or branch == "HEAD":
+        return None
+    return branch
+
+
+def preview_worktree(path: str, no_color: bool = False) -> None:
+    colors = setup_colors(no_color=no_color)
+    cols = int(os.environ.get("FZF_PREVIEW_COLUMNS", "80"))
+    commit_limit = _preview_commit_count()
+    branch = _branch_for_path(path)
+    ref_display = branch or path
+    output = _compose_preview(ref_display, branch or "", branch, path, colors, cols, commit_limit)
+    if output:
+        sys.stdout.write(output)
+        if not output.endswith("\n"):
+            sys.stdout.write("\n")
 
 
 def open_url_for_ref(ref: str) -> int:

@@ -158,8 +158,24 @@ def test_prefetch_pr_details_populates_cache(monkeypatch):
             return {
                 "data": {
                     "repository": {
-                        "r0": {"nodes": [{"number": 1, "headRefName": "branch1", "author": {"login": "user1"}}]},
-                        "r1": {"nodes": [{"number": 2, "headRefName": "branch2", "author": {"login": "user2"}}]},
+                        "r0": {
+                            "nodes": [
+                                {
+                                    "number": 1,
+                                    "headRefName": "branch1",
+                                    "author": {"login": "user1"},
+                                }
+                            ]
+                        },
+                        "r1": {
+                            "nodes": [
+                                {
+                                    "number": 2,
+                                    "headRefName": "branch2",
+                                    "author": {"login": "user2"},
+                                }
+                            ]
+                        },
                     }
                 }
             }

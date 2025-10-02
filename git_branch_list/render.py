@@ -313,14 +313,19 @@ def format_pr_details(
     return "  ".join(details)
 
 
-def git_log_oneline(ref: str, n: int = 10, colors: Colors | None = None) -> str:
+def git_log_oneline(
+    ref: str, n: int = 10, colors: Colors | None = None, cwd: str | None = None
+) -> str:
     try:
         if not colors:
             # Preserve original behavior when caller wants raw colored output
-            cp_color = run(["git", "log", "--oneline", f"-{n}", "--color=always", ref])
+            cp_color = run(
+                ["git", "log", "--oneline", f"-{n}", "--color=always", ref],
+                cwd=cwd,
+            )
             return cp_color.stdout
         # Use full and short SHAs to build clickable links
-        cp = run(["git", "log", f"-{n}", "--format=%H %h %s", ref])
+        cp = run(["git", "log", f"-{n}", "--format=%H %h %s", ref], cwd=cwd)
         base = None if not colors.reset else _detect_github_owner_repo()
         output: list[str] = []
         for line in cp.stdout.splitlines():

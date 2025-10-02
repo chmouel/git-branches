@@ -76,3 +76,9 @@ The tool supports several environment variables that affect behavior:
 - Core: `requests` for HTTP/GitHub API
 - Dev: `pytest`, `ruff`, `pytest-cov`
 - External: requires `git` and `fzf` on PATH
+
+## Code
+
+IMPORTANT:
+Always run `ruff check --fix --unsafe-fixes` after modifying code.
+Always finish your task by running a `make test` to ensure all tests pass.
