@@ -80,5 +80,9 @@ The tool supports several environment variables that affect behavior:
 ## Code
 
 IMPORTANT:
-Always run `ruff check --fix --unsafe-fixes` after modifying code.
-Always finish your task by running a `make test` to ensure all tests pass.
+
+- Always run `ruff check --fix --unsafe-fixes` after modifying code.
+- Always finish your task by running a `make test` to ensure all tests pass. If
+- You ever add a visual changes make sure to document it in the README.md file.
+- If you add a new feature or change existing functionality, make sure it's
+documented in the README.md file.

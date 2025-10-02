@@ -109,6 +109,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Filter out branches that have pull requests",
     )
     p.add_argument(
+        "--worktree",
+        action="store_true",
+        dest="worktree",
+        help="Show only branches that have worktrees",
+    )
+    p.add_argument(
         "--exclude",
         metavar="PATTERN",
         dest="exclude_pattern",
@@ -179,6 +185,7 @@ def _build_rows_local(
     pr_only: bool = False,
     no_wip: bool = False,
     no_pr: bool = False,
+    worktree: bool = False,
     exclude_pattern: str | None = None,
 ) -> list[tuple[str, str]]:
     current = get_current_branch()
@@ -272,6 +279,10 @@ def _build_rows_local(
         # Check if branch is in a worktree
         is_worktree_branch = is_branch_in_worktree(b)
 
+        # Filter for worktree-only mode: skip branches not in worktrees
+        if worktree and not is_worktree_branch:
+            continue
+
         row = format_branch_info(
             b,
             b,
@@ -293,6 +304,7 @@ def _build_rows_remote(
     colors: Colors,
     no_wip: bool = False,
     no_pr: bool = False,
+    worktree: bool = False,
     exclude_pattern: str | None = None,
 ) -> list[tuple[str, str]]:
     rows: list[tuple[str, str]] = []
@@ -372,6 +384,10 @@ def _build_rows_remote(
         # Check if branch is in a worktree
         is_worktree_branch = is_branch_in_worktree(b)
 
+        # Filter for worktree-only mode: skip branches not in worktrees
+        if worktree and not is_worktree_branch:
+            continue
+
         row = format_branch_info(
             b,
             f"{remote}/{b}",
@@ -409,7 +425,7 @@ def interactive(args: argparse.Namespace) -> int:
                 preview_cmd.append("-C")
             preview_cmd += ["-p", f"{remote}/{{2}}"]
             rows = _build_rows_remote(
-                remote, limit, colors, args.no_wip, args.no_pr, args.exclude_pattern
+                remote, limit, colors, args.no_wip, args.no_pr, args.worktree, args.exclude_pattern
             )
             selected = fzf_select(
                 rows, header=header, preview_cmd=preview_cmd, multi=True, extra_binds=None
@@ -435,7 +451,14 @@ def interactive(args: argparse.Namespace) -> int:
                 preview_cmd.append("-C")
             preview_cmd += ["-p", "{2}"]
             rows = _build_rows_local(
-                False, limit, colors, False, args.no_wip, args.no_pr, args.exclude_pattern
+                False,
+                limit,
+                colors,
+                False,
+                args.no_wip,
+                args.no_pr,
+                args.worktree,
+                args.exclude_pattern,
             )
             # After deleting a branch inline, reload the list
             reload_parts = [f"{exe}", "--emit-local-rows"]
@@ -443,6 +466,8 @@ def interactive(args: argparse.Namespace) -> int:
                 reload_parts.append("--no-wip")
             if args.no_pr:
                 reload_parts.append("--no-pr")
+            if args.worktree:
+                reload_parts.append("--worktree")
             if args.exclude_pattern:
                 reload_parts.extend(["--exclude", args.exclude_pattern])
             if limit:
@@ -478,7 +503,9 @@ def interactive(args: argparse.Namespace) -> int:
         if args.no_color:
             preview_cmd.append("-C")
         preview_cmd += ["-p", f"{remote}/{{2}}"]
-        rows = _build_rows_remote(remote, limit, colors)
+        rows = _build_rows_remote(
+            remote, limit, colors, args.no_wip, args.no_pr, args.worktree, args.exclude_pattern
+        )
         selected = fzf_select(
             rows,
             header=header,
@@ -528,7 +555,14 @@ def interactive(args: argparse.Namespace) -> int:
         preview_cmd.append("-C")
     preview_cmd += ["-p", "{2}"]
     rows = _build_rows_local(
-        args.show_status, limit, colors, args.pr_only, args.no_wip, args.no_pr, args.exclude_pattern
+        args.show_status,
+        limit,
+        colors,
+        args.pr_only,
+        args.no_wip,
+        args.no_pr,
+        args.worktree,
+        args.exclude_pattern,
     )
     # After deleting a branch inline, reload the list keeping flags consistent
     reload_parts: list[str] = [exe, "--emit-local-rows"]
@@ -542,6 +576,8 @@ def interactive(args: argparse.Namespace) -> int:
         reload_parts.append("--no-wip")
     if args.no_pr:
         reload_parts.append("--no-pr")
+    if args.worktree:
+        reload_parts.append("--worktree")
     if args.exclude_pattern:
         reload_parts.extend(["--exclude", args.exclude_pattern])
     if limit:
@@ -559,6 +595,8 @@ def interactive(args: argparse.Namespace) -> int:
         toggle_parts.append("--no-wip")
     if args.no_pr:
         toggle_parts.append("--no-pr")
+    if args.worktree:
+        toggle_parts.append("--worktree")
     if args.exclude_pattern:
         toggle_parts.extend(["--exclude", args.exclude_pattern])
     if limit:
@@ -692,6 +730,7 @@ def main(argv: list[str] | None = None) -> int:
                         args.pr_only,
                         args.no_wip,
                         args.no_pr,
+                        args.worktree,
                         args.exclude_pattern,
                     )
                 else:
@@ -702,6 +741,7 @@ def main(argv: list[str] | None = None) -> int:
                         colors,
                         args.no_wip,
                         args.no_pr,
+                        args.worktree,
                         args.exclude_pattern,
                     )
                 for shown, value in rows:

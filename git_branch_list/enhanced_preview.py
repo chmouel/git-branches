@@ -545,11 +545,23 @@ def format_enhanced_preview(
         lines.append("Not a git repository.")
         return "\n".join(lines)
 
+    # Check if branch is in a worktree
+    from .git_ops import get_worktree_path, is_branch_in_worktree
+
+    if is_branch_in_worktree(branch_name):
+        worktree_path = get_worktree_path(branch_name)
+        if worktree_path:
+            if colors.reset:
+                worktree_line = f"\033[38;5;200m\033[0m Worktree: \033[36m{worktree_path}\033[0m"
+            else:
+                worktree_line = f"\uf838 Worktree: {worktree_path}"
+            lines.append(worktree_line)
+
     # Tracking information
     tracking, ahead, behind = _get_tracking_info(branch_name, cwd)
     if tracking:
         if colors.reset:
-            track_line = f"\033[38;5;244m󰷲\033[0m Tracking: \033[38;5;110m{tracking}\033[0m"
+            track_line = f"\033[38;5;195m󰷲\033[0m Tracking: \033[38;5;110m{tracking}\033[0m"
         else:
             track_line = f"󰷲 Tracking: {tracking}"
 

@@ -219,8 +219,6 @@ def format_branch_info(
 
     if is_current:
         branch_color = colors.current
-    elif is_worktree:
-        branch_color = colors.magenta
     else:
         branch_color = colors.local
     branch_width = 40

@@ -43,6 +43,7 @@ def test_parser_flags():
             "--checks",
             "--fast",
             "--pr-only",
+            "--worktree",
         ]
     )  # noqa: F841
     assert ns.remote_mode
@@ -55,6 +56,7 @@ def test_parser_flags():
     assert ns.checks
     assert ns.fast
     assert ns.pr_only
+    assert ns.worktree
 
 
 def test_fast_mode_sets_environment_variables(monkeypatch):
@@ -1063,3 +1065,50 @@ def test_interactive_pr_only_toggle_command_generation(monkeypatch):
     assert "--pr-only" not in alt_p_binding
     assert "-s" in alt_p_binding  # Should preserve show_status
     assert "-n 5" in alt_p_binding  # Should preserve limit
+
+
+def test_build_rows_local_worktree_filtering(monkeypatch):
+    """Test that _build_rows_local correctly filters branches when worktree=True."""
+
+    # Clear offline mode to enable worktree functionality
+    monkeypatch.delenv("GIT_BRANCHES_OFFLINE", raising=False)
+
+    # Mock branch list
+    monkeypatch.setattr(
+        cli, "iter_local_branches", lambda limit: ["branch-with-worktree", "branch-no-worktree"]
+    )
+    monkeypatch.setattr(cli, "get_current_branch", lambda: "main")
+
+    # Mock commit cache
+    monkeypatch.setattr(
+        cli,
+        "get_last_commit_from_cache",
+        lambda ref: ("1700000000", "f" * 40, "deadbee", "commit subject"),
+    )
+
+    # Mock GitHub functionality
+    monkeypatch.setattr(github, "detect_base_repo", lambda: ("owner", "repo"))
+    monkeypatch.setattr(github, "_fetch_prs_and_populate_cache", lambda: None)
+    monkeypatch.setattr(cli, "build_last_commit_cache_for_refs", lambda refs: None)
+    monkeypatch.setattr(github, "_checks_enabled", lambda: False)
+    monkeypatch.setattr(github, "get_pr_status_from_cache", lambda branch, colors: "")
+
+    # Mock worktree detection - only branch-with-worktree has a worktree
+    def mock_is_branch_in_worktree(branch):
+        return branch == "branch-with-worktree"
+
+    monkeypatch.setattr(cli, "is_branch_in_worktree", mock_is_branch_in_worktree)
+
+    colors = render.Colors()
+
+    # Test with worktree=False - should return both branches
+    rows_all = cli._build_rows_local(False, None, colors, worktree=False)
+    assert len(rows_all) == 2
+    branch_names = [row[1] for row in rows_all]
+    assert "branch-with-worktree" in branch_names
+    assert "branch-no-worktree" in branch_names
+
+    # Test with worktree=True - should only return branch with worktree
+    rows_worktree_only = cli._build_rows_local(False, None, colors, worktree=True)
+    assert len(rows_worktree_only) == 1
+    assert rows_worktree_only[0][1] == "branch-with-worktree"

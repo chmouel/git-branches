@@ -109,6 +109,7 @@ brew install --HEAD chmouel/git-branches/git-branches
 - `--fast`: Super fast offline mode (no network calls, minimal processing)
 - `--refresh`: Force refresh of PR cache (ignore stale cache and ETag)
 - `--checks`: Fetch and show GitHub Actions status (preview and a small indicator in rows). Without this flag, cached results (if available) are still displayed, but no network calls are made for checks.
+- `--worktree`: Show only branches that have worktrees
 
 ### Preview & Integration Options
 
@@ -127,7 +128,6 @@ The colors are configurable via your git configuration (e.g., `git config --glob
 | Element                 | Color                               | Description                                                                 |
 | ----------------------- | ----------------------------------- | --------------------------------------------------------------------------- |
 | **Current Branch**      | `color.branch.current` (green)      | Highlights the currently checked-out branch.                                |
-| **Worktree Branch**     | Magenta                             | Indicates that a branch is checked out in a worktree.                       |
 | **Local Branch**        | `color.branch.local` (normal)       | Default color for local branches.                                           |
 | **Commit Hash**         | `color.diff.commit` (yellow)        | Color of the short commit hash.                                             |
 | **Date**                | `color.branch.upstream` (cyan)      | Color of the commit date.                                                   |
@@ -187,6 +187,15 @@ The colors are configurable via your git configuration (e.g., `git config --glob
 | `` | Changes Requested | Red | The reviewer has requested changes. |
 | `` | Commented | Yellow | The reviewer has left comments. |
 | `` | Pending | Yellow | A review is pending from this user. |
+
+### Preview Icons
+
+| Icon | Name | Color | Description |
+| :--- | :--- | :--- | :--- |
+| `󰘬` | Branch | Green | Branch preview header. |
+| `󰷲` | Tracking | Grey | Shows tracking branch information. |
+| `󰛿` | Changes | Yellow | Indicates uncommitted changes. |
+| `` | Worktree | Magenta | Shows that the branch is checked out in a worktree with its path. |
 
 ## Key bindings (fzf)
 

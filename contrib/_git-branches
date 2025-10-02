@@ -1,37 +1,37 @@
-#compdef git-branches
-# Zsh completion for git-branches
+#compdef git-branches po
 
-_git_branches() {
-    local ret=1
-    local -a state state_descr args context line
-    typeset -A opt_args
+local worktree_dir=${HOME}/git/pac/trees
 
-    _arguments -C -S \
-        '(-R -d -D)-r[Browse remote branches (interactive remote selection)]' \
-        '(-r -d -D)-R[Browse specific remote branches]:remote:->remotes' \
-        '(-r -R -D)-d[Delete local branches (interactive multi-select)]' \
-        '(-r -R -d)-D[Delete remote branches (interactive multi-select)]:remote:->remotes' \
-        '(*-r *-R *-d *-D)-s[Show GitHub pushed status (branch exists on remote)]' \
-        '-s-S[With -s, show all branches (no default limit)]' \
-        '-n[Limit to first NUM branches]:number:' \
-        '-C[Disable colors]' \
-        '(*-d *-D)-l[List mode only (no checkout)]' \
-        '--refresh[Force refresh PR cache (ignore ETag)]' \
-        '--checks[Fetch and show GitHub Actions status]' \
-        '-h[Show this help]' \
-        '*--help[Show this help]' && ret=0
+local ret=1
+_arguments -C : \
+    '1:worktree:->worktree' && return 0
 
-    case $state in
-        (remotes)
-            local -a remotes
-            remotes=(${(f)"$(git remote 2>/dev/null)"})
-            if (( $#remotes )); then
-                _wanted remotes expl 'remote repository' compadd -a remotes && ret=0
+case $state in
+    worktree)
+        local -a profiles descrs
+        local repo branch msg
+        profiles=( "$worktree_dir"/*(/:t) )
+        for p in $profiles; do
+            repo="$worktree_dir/$p"
+            if [[ -e "$repo/.git" ]] || git -C "$repo" rev-parse --is-inside-work-tree &>/dev/null; then
+                branch=$(git -C "$repo" symbolic-ref --short HEAD 2>/dev/null || git -C "$repo" rev-parse --short HEAD 2>/dev/null)
+                branch=${branch//$'\n'/}
+                msg=$(git -C "$repo" log -1 --pretty=%s 2>/dev/null)
+                msg=${msg//$'\n'/}
+                # leave room: "[branch] -- " ~ length(branch)+6
+                integer room; room=$COLUMNS
+                (( room = room - ${#branch} - 6 ))
+                (( room < 10 )) && room=10
+                if (( ${#msg} > room )); then
+                    msg="${msg[1,room]}…"
+                fi
+                descrs+=( "$p:[${branch}] -- $msg" )
+            else
+                descrs+=( "$p:$repo" )
             fi
-            ;;
-    esac
+        done
+        _describe -t worktrees 'worktrees' descrs && ret=0
+        ;;
+esac
 
-    return ret
-}
-
-_git_branches "$@"
+return ret
