@@ -663,8 +663,7 @@ def format_enhanced_preview(
 
                 ticket_info = _get_jayrah_ticket_info(ticket)
                 if ticket_info:
-                    # Make URLs in JIRA content clickable
-                    clickable_content = _make_urls_clickable(ticket_info)
+                    clickable_content = ticket_info
                     lines.append(clickable_content)
                 else:
                     # Fallback - show clickable ticket number
