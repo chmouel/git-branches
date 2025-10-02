@@ -56,7 +56,7 @@ git-branches --fast
 - Python 3.12+ (uv-managed)
 - Optional: `GITHUB_TOKEN` (improves rate limits and enables private repos)
 - Optional: a Nerd Font for icons (fallback text is still readable)
-- Optional: [jayrah](https://github.com/ankitpokhrel/jira-cli) for JIRA ticket integration
+- Optional: [jayrah](https://github.com/chmouel/jayrah) for JIRA ticket integration
 - Optional: [gum](https://github.com/charmbracelet/gum) for enhanced JIRA ticket formatting
 - Optional: [gh](https://cli.github.com/) GitHub CLI for enhanced PR information in previews
 
