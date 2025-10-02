@@ -143,6 +143,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-p", dest="preview_ref", metavar="REF", help=argparse.SUPPRESS)
     p.add_argument("-f", action="store_true", dest="force", help=argparse.SUPPRESS)
     p.add_argument("--delete-one", dest="delete_one", metavar="BRANCH", help=argparse.SUPPRESS)
+    p.add_argument(
+        "--delete-branch-or-worktree",
+        dest="delete_branch_or_worktree",
+        metavar="BRANCH",
+        help=argparse.SUPPRESS,
+    )
     # internal helpers for fzf reload
     p.add_argument(
         "--emit-local-rows",
@@ -444,7 +450,7 @@ def interactive(args: argparse.Namespace) -> int:
             reload_cmd = " ".join(reload_parts)
             binds = [
                 f"ctrl-o:execute-silent({exe} -o {{2}})",
-                f"alt-k:execute(gum confirm 'Delete {{2}}?' && {exe} --delete-one {{2}})+reload({reload_cmd})",
+                f"alt-k:execute({exe} --delete-branch-or-worktree {{2}})+reload({reload_cmd})",
             ]
             selected = fzf_select(
                 rows, header=header, preview_cmd=preview_cmd, multi=True, extra_binds=binds
@@ -561,7 +567,7 @@ def interactive(args: argparse.Namespace) -> int:
 
     binds = [
         f"ctrl-o:execute-silent({exe} -o {{2}})",
-        f"alt-k:execute(gum confirm 'Delete {{2}}?' && {exe} --delete-one {{2}})+reload({reload_cmd})",
+        f"alt-k:execute({exe} --delete-branch-or-worktree {{2}})+reload({reload_cmd})",
         f"alt-r:execute(reply=$(gum input --value={{2}} --prompt=\"Rename branch: \");git branch -m {{2}} \"$reply\";read -z1 -t1)+reload({reload_cmd})",
         f"alt-w:execute(set -x;[[ {{2}} == WIP-* ]] && n=$(echo {{2}}|sed 's/WIP-//') || n=WIP-{{2}};git branch -m {{2}} \"$n\")+reload({reload_cmd})",
         f"alt-p:reload({toggle_cmd})",
@@ -603,6 +609,29 @@ def _is_workdir_dirty() -> bool:
         return False
 
 
+def delete_branch_or_worktree(branch: str) -> int:
+    if is_branch_in_worktree(branch):
+        worktree_path = get_worktree_path(branch)
+        if worktree_path:
+            if confirm(f"'{branch}' is a worktree. Delete worktree and branch?"):
+                try:
+                    run(["git", "worktree", "remove", worktree_path], check=True)
+                    run(["git", "branch", "--delete", "--force", branch], check=True)
+                    return 0
+                except Exception:
+                    return 1
+            else:
+                return 0
+    else:
+        if confirm(f"Delete branch '{branch}'?"):
+            try:
+                run(["git", "branch", "--delete", "--force", branch], check=True)
+                return 0
+            except Exception:
+                return 1
+    return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
@@ -628,8 +657,11 @@ def main(argv: list[str] | None = None) -> int:
             or args.delete_one
             or args.emit_local_rows
             or args.emit_remote_rows
+            or args.delete_branch_or_worktree
         ):
             ensure_git_repo(required=True)
+            if args.delete_branch_or_worktree:
+                return delete_branch_or_worktree(args.delete_branch_or_worktree)
             # Prefetch-details is env-only now (GIT_BRANCHES_PREFETCH_DETAILS)
             if args.open_ref:
                 return github.open_url_for_ref(args.open_ref)
