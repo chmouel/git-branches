@@ -65,7 +65,7 @@ git-branches --fast
 ### [UV](https://docs.astral.sh/uv/getting-started/installation/)
 
   ```bash
-  uv tool install git-branches
+  uv tool install git+https://github.com/chmouel/git-branches.git@main
   ```
 
 ### [Homebrew](https://brew.sh/) (Tap)
@@ -96,6 +96,7 @@ brew install --HEAD chmouel/git-branches/git-branches
 ## Command-line options 🧭
 
 ### Core Options
+
 - `-r`: Browse remote branches (choose remote via fzf)
 - `-R <remote>`: Browse a specific remote (e.g., origin)
 - `-d`: Delete local branches (multi-select)
@@ -110,6 +111,7 @@ brew install --HEAD chmouel/git-branches/git-branches
 - `--checks`: Fetch and show GitHub Actions status (preview and a small indicator in rows). Without this flag, cached results (if available) are still displayed, but no network calls are made for checks.
 
 ### Preview & Integration Options
+
 - `--status`: Show current git status and unpushed changes preview
 - `--jira-pattern REGEX`: Custom regex pattern for JIRA ticket detection (e.g., `'PROJ-\d+'`, default: `'SRVKP-\d+'`)
 - `--jira-url URL`: JIRA base URL for ticket links (default: `https://issues.redhat.com`)
@@ -192,6 +194,7 @@ Controls:
 ## Environment Variables 🔧
 
 ### GitHub & Performance
+
 - `GIT_BRANCHES_OFFLINE=1`: Run fully offline (no GitHub requests).
 - `GIT_BRANCHES_NO_CACHE=1`: Bypass disk/memory caching and ETag.
 - `GIT_BRANCHES_REFRESH=1`: Force refresh of caches for this run.
@@ -200,11 +203,13 @@ Controls:
 - `GIT_BRANCHES_NO_PROGRESS=1`: Disable spinners/progress indicators.
 
 ### JIRA Integration
+
 - `GIT_BRANCHES_JIRA_ENABLED=1`: Enable/disable JIRA integration (default: enabled).
 - `GIT_BRANCHES_JIRA_PATTERN=REGEX`: Regex pattern for JIRA ticket detection (default: `SRVKP-\d+`).
 - `GIT_BRANCHES_JIRA_BASE_URL=URL`: JIRA instance URL (default: `https://issues.redhat.com`).
 
 ### Customization
+
 - `GIT_BRANCHES_BASE_BRANCH=BRANCH`: Base branch for comparisons (default: `main`).
 - `GIT_BRANCHES_CACHE_DIR=PATH`: Custom cache directory location.
 - `XDG_CACHE_HOME=PATH`: Standard XDG cache directory (respects XDG Base Directory Specification).
@@ -212,6 +217,7 @@ Controls:
 ## Advanced Features 🚀
 
 ### JIRA Integration
+
 git-branches can automatically detect JIRA tickets in branch names and display ticket information in the preview:
 
 ```bash
@@ -228,6 +234,7 @@ git-branches --no-jira
 **Requirements**: Install [jayrah](https://github.com/ankitpokhrel/jira-cli) for JIRA CLI integration. Optionally install [gum](https://github.com/charmbracelet/gum) for enhanced markdown formatting.
 
 ### Current Status Preview
+
 View detailed git status and unpushed changes:
 
 ```bash
@@ -235,6 +242,7 @@ git-branches --status
 ```
 
 Shows:
+
 - Current branch with tracking info
 - Staged, unstaged, and untracked file counts
 - List of changed files with status indicators
@@ -242,7 +250,9 @@ Shows:
 - PR information if available
 
 ### Clickable Terminal Links
+
 Modern terminals supporting OSC 8 escape sequences will make these elements clickable:
+
 - **Branch names**: Click to open GitHub branch page
 - **PR numbers**: Click to open pull request
 - **JIRA tickets**: Click to open ticket in JIRA
