@@ -10,8 +10,7 @@ import webbrowser
 from .git_ops import run, which
 from .jira_integration import format_jira_section, get_jira_tickets_for_branch
 from .progress import Spinner
-from .render import (Colors, format_pr_details, git_log_oneline, setup_colors,
-                     truncate_display)
+from .render import Colors, format_pr_details, git_log_oneline, setup_colors, truncate_display
 
 DEFAULT_PR_STATES = ["OPEN"]
 

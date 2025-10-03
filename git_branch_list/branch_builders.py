@@ -19,9 +19,14 @@ import re
 import sys
 
 from . import github
-from .git_ops import (build_last_commit_cache_for_refs, get_current_branch,
-                      get_last_commit_from_cache, is_branch_in_worktree,
-                      iter_local_branches, iter_remote_branches)
+from .git_ops import (
+    build_last_commit_cache_for_refs,
+    get_current_branch,
+    get_last_commit_from_cache,
+    is_branch_in_worktree,
+    iter_local_branches,
+    iter_remote_branches,
+)
 from .render import Colors, format_branch_info
 
 
@@ -249,4 +254,3 @@ def _build_rows_remote(
         )
         rows.append((row, b))
     return rows
-

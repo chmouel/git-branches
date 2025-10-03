@@ -14,13 +14,18 @@ in the git-branches CLI tool, including:
 
 import os
 import sys
-from pathlib import Path
 
 from . import github, worktrees
 from .fzf_ui import confirm, fzf_select
 from .git_ops import is_branch_in_worktree, run, which
 from .render import Colors, setup_colors, truncate_display
-from .utils import _create_worktree_from_pr, _has_local_branch, _local_branch_icon, _worktree_base_dir, _worktree_icon, write_path_file
+from .utils import (
+    _has_local_branch,
+    _local_branch_icon,
+    _worktree_base_dir,
+    _worktree_icon,
+    write_path_file,
+)
 
 
 def _checkout_pr_branch(pr_data: dict, remote: str) -> int:
@@ -151,6 +156,7 @@ def _build_pr_rows(
 
 def browse_pull_requests(args) -> int:
     from .git_ops import ensure_deps
+
     ensure_deps(interactive=True)
     colors = setup_colors(args.no_color)
     states = {s.strip().upper() for s in (args.pr_states or []) if s.strip()}
@@ -199,6 +205,7 @@ def browse_pull_requests(args) -> int:
 
 def _is_workdir_dirty() -> bool:
     from .git_ops import run
+
     try:
         cp = run(["git", "status", "--porcelain"], check=True)
         return bool(cp.stdout.strip())

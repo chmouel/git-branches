@@ -136,39 +136,43 @@ By default only **OPEN** pull requests are shown. Use `--pr-states <STATE...>` (
 
 ## Shell Completion 🔌
 
-Supported shells and scripts under `contrib/`:
+There are two ways to enable completion:
+
+- Built-in generator (recommended)
+- Static scripts under `contrib/`
+
+### Built-in (Click-based)
+
+`git-branches` can emit completion scripts for Bash, Zsh, Fish, and PowerShell.
+
+Quick enable in the current shell session:
+
+```bash
+eval "$(uv run git-branches completion --shell bash)"   # Bash
+eval "$(uv run git-branches completion --shell zsh)"    # Zsh
+uv run git-branches completion --shell fish | source     # Fish
+```
+
+Persistent enablement:
+
+- Bash: add `eval "$(git-branches completion --shell bash)"` to `~/.bashrc`
+- Zsh: add `eval "$(git-branches completion --shell zsh)"` to `~/.zshrc`
+- Fish: add `git-branches completion --shell fish > ~/.config/fish/completions/git-branches.fish`
+
+Extras:
+
+- `-R/--remote-name` offers remote name completion from `git remote`.
+- `--pr-states` completes to `OPEN`, `CLOSED`, `MERGED`, or `ALL`.
+
+### Static scripts (contrib/)
+
+If you prefer static files, use the scripts under `contrib/`:
 
 - Zsh: `_git-branches`
 - Bash: `git-branches.bash`
 - Fish: `git-branches.fish`
 
-### Zsh
-
-Add the `contrib` directory to your `fpath` in `.zshrc` and re-init completions:
-
-```zsh
-fpath+=($PWD/contrib)
-autoload -U compinit && compinit
-```
-
-Use the absolute path to your clone instead of `$PWD` in your dotfiles.
-
-### Bash
-
-Source the completion script from your `.bashrc` or `.bash_profile`:
-
-```bash
-source /absolute/path/to/contrib/git-branches.bash
-```
-
-### Fish
-
-Copy or symlink the Fish completion to your user completions directory:
-
-```fish
-mkdir -p ~/.config/fish/completions
-ln -sf /absolute/path/to/contrib/git-branches.fish ~/.config/fish/completions/git-branches.fish
-```
+Follow the comments in each file for installation.
 
 ### Arch Linux (PKGBUILD / AUR-style)
 

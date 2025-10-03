@@ -21,7 +21,7 @@ function __git_branch() {
         echo "command git-branches is not found"
         return 1
     }
-    $commands[git-branches] "${args[@]}" $@
+    $commands[git-branches] ${args[@]} $@
     if test -s ${path_file}; then
         output="${(f)$(<"$path_file")}"
         [[ -d ${output} ]] && {

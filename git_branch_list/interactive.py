@@ -13,15 +13,17 @@ CLI tool. It handles:
 
 """
 
-import os
 import sys
-from pathlib import Path
 
 from .branch_builders import _build_rows_local, _build_rows_remote
 from .fzf_ui import confirm, fzf_select, select_remote
-from .git_ops import (ensure_deps, get_current_branch, get_worktree_path,
-                      is_branch_in_worktree, remote_ssh_url, run)
-from .pr_handlers import browse_pull_requests
+from .git_ops import (
+    ensure_deps,
+    get_worktree_path,
+    is_branch_in_worktree,
+    remote_ssh_url,
+    run,
+)
 from .render import setup_colors
 from .utils import _is_workdir_dirty, write_path_file
 

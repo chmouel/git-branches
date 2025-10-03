@@ -10,28 +10,18 @@ CLI tool, including:
 - UI icons and colors (_local_branch_icon, _worktree_icon)
 - Git status checking (_is_workdir_dirty)
 - File output utilities (write_path_file)
-- PR worktree creation (_create_worktree_from_pr)
 """
 
 from __future__ import annotations
 
-import argparse
 import os
 import re
 import subprocess
-import sys
 import unicodedata
 from pathlib import Path
 
-from . import github, worktrees
-from .fzf_ui import confirm, fzf_select, select_remote
-from .git_ops import (build_last_commit_cache_for_refs, ensure_deps,
-                      ensure_git_repo, get_current_branch,
-                      get_last_commit_from_cache, get_worktree_path,
-                      is_branch_in_worktree, iter_local_branches,
-                      iter_remote_branches, remote_ssh_url, run, which)
-from .render import Colors, format_branch_info, setup_colors, truncate_display
-from .status_preview import print_current_status_preview
+from .git_ops import run
+from .render import Colors
 
 _PR_SLUG_LIMIT = 60
 _PR_BRANCH_LIMIT = 80
@@ -103,49 +93,3 @@ def write_path_file(worktree_path: Path):
     output_file = Path("/tmp/.git-branches-path")
     output_file.write_text(str(worktree_path), encoding="utf-8")
     print(worktree_path)
-
-
-def _create_worktree_from_pr(pr_data: dict) -> int:
-    from . import worktrees
-    from .fzf_ui import confirm
-    from .git_ops import run, which
-    branch_name = pr_data["headRefName"]
-    base = _worktree_base_dir()
-    worktree_path = base / branch_name
-    if worktree_path.exists():
-        write_path_file(worktree_path)
-        return 0
-    # ask if we want to add the worktrees and checkout pr
-    question = f"Create worktree at {worktree_path} and checkout PR #{pr_data.get('number')}?"
-    if not confirm(question):
-        return 1
-    try:
-        run(["git", "worktree", "add", str(worktree_path)], check=True)
-        worktrees.save_last_worktree(str(worktree_path))
-    except Exception as exc:
-        print(f"Error: git worktree add failed: {exc}", file=__import__("sys").stderr)
-        return 1
-
-    if not which("gh"):
-        print("Error: GitHub CLI (gh) is required for PR checkout.", file=__import__("sys").stderr)
-        return 1
-    pr_number = pr_data.get("number")
-    try:
-        run(
-            [
-                "gh",
-                "pr",
-                "checkout",
-                str(pr_number),
-                "--branch",
-                branch_name,
-                "--force",
-            ],
-            check=True,
-            cwd=str(worktree_path),
-        )
-    except Exception as exc:
-        print(f"Error: gh pr checkout failed: {exc}", file=__import__("sys").stderr)
-        return 1
-    write_path_file(worktree_path)
-    return 0
