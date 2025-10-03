@@ -4,8 +4,10 @@ import argparse
 import os
 import re
 import sys
+import unicodedata
+from pathlib import Path
 
-from . import github
+from . import github, worktrees
 from .fzf_ui import confirm, fzf_select, select_remote
 from .git_ops import (
     build_last_commit_cache_for_refs,
@@ -19,9 +21,249 @@ from .git_ops import (
     iter_remote_branches,
     remote_ssh_url,
     run,
+    which,
 )
-from .render import Colors, format_branch_info, setup_colors
+from .render import Colors, format_branch_info, setup_colors, truncate_display
 from .status_preview import print_current_status_preview
+
+_PR_SLUG_LIMIT = 60
+_PR_BRANCH_LIMIT = 80
+
+
+def _slugify_title(value: str, max_length: int = _PR_SLUG_LIMIT) -> str:
+    normalized = unicodedata.normalize("NFKD", value or "")
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    ascii_text = ascii_text.lower()
+    ascii_text = re.sub(r"[^a-z0-9._-]+", "-", ascii_text)
+    ascii_text = re.sub(r"-{2,}", "-", ascii_text)
+    ascii_text = ascii_text.strip("-._")
+    if len(ascii_text) > max_length:
+        ascii_text = ascii_text[:max_length].rstrip("-._")
+    return ascii_text or "pr"
+
+
+def _derive_pr_branch_name(pr_number: int, title: str) -> str:
+    slug = _slugify_title(title)
+    branch = f"pr-{pr_number}-{slug}" if slug else f"pr-{pr_number}"
+    if len(branch) > _PR_BRANCH_LIMIT:
+        branch = branch[:_PR_BRANCH_LIMIT].rstrip("-._")
+    return branch or f"pr-{pr_number}"
+
+
+def _worktree_base_dir() -> Path:
+    env = os.environ.get("GIT_BRANCHES_WORKTREE_BASEDIR") or os.environ.get("PM_BASEDIR")
+    if env:
+        base = Path(os.path.expanduser(env))
+    else:
+        try:
+            repo_root = run(["git", "rev-parse", "--show-toplevel"], check=True).stdout.strip()
+            if repo_root:
+                repo_path = Path(repo_root)
+                base = repo_path.parent
+            else:
+                base = Path.cwd() / ".git-branches-worktrees"
+        except Exception:
+            base = Path.cwd() / ".git-branches-worktrees"
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+
+def _has_local_branch(branch: str) -> bool:
+    if not branch:
+        return False
+    try:
+        cp = run(["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"], check=False)
+    except Exception:
+        return False
+    return cp.returncode == 0
+
+
+def _local_branch_icon(colors: Colors) -> str:
+    icon = ""
+    if colors.reset and colors.green:
+        return f"{colors.green}{icon}{colors.reset}"
+    return icon
+
+
+def _worktree_icon(colors: Colors) -> str:
+    icon = ""
+    color = colors.magenta or colors.green or ""
+    if colors.reset and color:
+        return f"{color}{icon}{colors.reset}"
+    return icon
+
+
+def _checkout_pr_branch(pr_data: dict, remote: str) -> int:
+    _ = remote
+    pr_number = pr_data.get("number")
+    if pr_number is None:
+        return 1
+    branch_name = pr_data.get("headRefName")
+    if not branch_name:
+        return 1
+    if _is_workdir_dirty():
+        print(
+            "Error: Uncommitted changes detected. Please commit or stash before checkout.",
+            file=sys.stderr,
+        )
+        return 1
+    if not which("gh"):
+        print("Error: GitHub CLI (gh) is required for PR checkout.", file=sys.stderr)
+        return 1
+    if not confirm(f"Checkout PR #{pr_number} to branch '{branch_name}'?"):
+        return 1
+    try:
+        run(
+            [
+                "gh",
+                "pr",
+                "checkout",
+                str(pr_number),
+                "--branch",
+                branch_name,
+                "--force",
+            ],
+            check=True,
+        )
+        print(f"Checked out {branch_name}")
+        return 0
+    except Exception as exc:
+        print(f"Error: gh pr checkout failed: {exc}", file=sys.stderr)
+        return 1
+
+
+def _create_worktree_from_pr(pr_data: dict) -> int:
+    branch_name = pr_data["headRefName"]
+    base = _worktree_base_dir()
+    worktree_path = base / branch_name
+    if worktree_path.exists():
+        write_path_file(worktree_path)
+        return 0
+    # ask if we want to add the worktrees and checkout pr
+    question = f"Create worktree at {worktree_path} and checkout PR #{pr_data.get('number')}?"
+    if not confirm(question):
+        return 1
+    try:
+        run(["git", "worktree", "add", str(worktree_path)], check=True)
+        worktrees.save_last_worktree(str(worktree_path))
+    except Exception as exc:
+        print(f"Error: git worktree add failed: {exc}", file=sys.stderr)
+        return 1
+
+    if not which("gh"):
+        print("Error: GitHub CLI (gh) is required for PR checkout.", file=sys.stderr)
+        return 1
+    pr_number = pr_data.get("number")
+    try:
+        run(
+            [
+                "gh",
+                "pr",
+                "checkout",
+                str(pr_number),
+                "--branch",
+                branch_name,
+                "--force",
+            ],
+            check=True,
+            cwd=str(worktree_path),
+        )
+    except Exception as exc:
+        print(f"Error: gh pr checkout failed: {exc}", file=sys.stderr)
+        return 1
+    write_path_file(worktree_path)
+    return 0
+
+
+def _build_pr_rows(
+    colors: Colors, states: set[str] | None
+) -> tuple[list[tuple[str, str]], dict[str, dict]]:
+    entries = github.get_cached_pull_requests()
+    maxw = os.get_terminal_size().columns if sys.stdout.isatty() else 120
+    title_width = max(30, maxw - 40)
+    rows: list[tuple[str, str]] = []
+    index: dict[str, dict] = {}
+    for branch_name, pr_data in entries:
+        number = pr_data.get("number")
+        if not number:
+            continue
+        if states and "ALL" not in states:
+            pr_state = (pr_data.get("state") or "").upper() or "OPEN"
+            if pr_state not in states:
+                continue
+        markers: list[str] = []
+
+        pr_data["_has_local"] = False
+        pr_data["_worktree_dir"] = ""
+        if _has_local_branch(branch_name):
+            markers.append(_local_branch_icon(colors))
+            pr_data["_has_local"] = True
+        if current_worktree := is_branch_in_worktree(branch_name):
+            markers.append(_worktree_icon(colors))
+            pr_data["_worktree_dir"] = current_worktree
+        status_icon = github.get_pr_status_from_cache(branch_name, colors)
+        title = truncate_display(pr_data.get("title") or "(no title)", title_width)
+        parts: list[str] = []
+        if status_icon.strip():
+            parts.append(status_icon.strip())
+        if markers:
+            parts.extend(markers)
+        parts.append(f"#{number}")
+        parts.append(title)
+        display = " ".join(part for part in parts if part)
+        if branch_name:
+            display = f"{display} [{branch_name}]"
+        value = str(number)
+        rows.append((display, value))
+        index[value] = pr_data
+    return rows, index
+
+
+def browse_pull_requests(args: argparse.Namespace) -> int:
+    ensure_deps(interactive=True)
+    colors = setup_colors(args.no_color)
+    states = {s.strip().upper() for s in (args.pr_states or []) if s.strip()}
+    if not states:
+        states = {"OPEN"}
+    remote_info = github.detect_base_remote()
+    if not remote_info:
+        print("Error: No GitHub remote detected for pull requests.", file=sys.stderr)
+        return 1
+    remote_name, _, _ = remote_info
+    rows, index = _build_pr_rows(colors, states)
+    if not rows:
+        print("No pull requests found or GitHub data unavailable.", file=sys.stderr)
+        return 1
+
+    header = "Pull requests (Enter=checkout, Alt-w=create worktree)"
+    result = fzf_select(
+        rows,
+        header=header,
+        preview_cmd=None,
+        multi=False,
+        extra_binds=None,
+        expect_keys=["enter", "alt-w"],
+    )
+    if isinstance(result, tuple):
+        key_pressed, selections = result
+    else:
+        key_pressed, selections = None, result
+
+    if not selections:
+        return 1
+
+    pr_id = selections[0]
+    pr_data = index.get(pr_id)
+    if not pr_data:
+        return 1
+
+    key = (key_pressed or "enter").strip()
+    if pr_data.get("_worktree_dir") and pr_data["_worktree_dir"] != "":
+        write_path_file(pr_data["_worktree_dir"])
+        return 0
+    if key == "alt-w":
+        return _create_worktree_from_pr(pr_data)
+    return _checkout_pr_branch(pr_data, remote_name)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -113,6 +355,19 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         dest="worktree",
         help="Show only branches that have worktrees",
+    )
+    p.add_argument(
+        "--prs",
+        action="store_true",
+        dest="browse_prs",
+        help="Browse pull requests (Enter=checkout, Alt-w=create worktree)",
+    )
+    p.add_argument(
+        "--pr-states",
+        nargs="+",
+        default=["OPEN"],
+        dest="pr_states",
+        help="PR states to include (default: OPEN). Use ALL to show every state.",
     )
     p.add_argument(
         "--exclude",
@@ -397,10 +652,15 @@ def _build_rows_remote(
             status=status,
             pr_info=pr_info,
             is_own_pr=is_own_pr,
-            is_worktree=is_worktree_branch,
         )
         rows.append((row, b))
     return rows
+
+
+def write_path_file(worktree_path: Path):
+    output_file = Path("/tmp/.git-branches-path")
+    output_file.write_text(str(worktree_path), encoding="utf-8")
+    print(worktree_path)
 
 
 def interactive(args: argparse.Namespace) -> int:
@@ -524,7 +784,7 @@ def interactive(args: argparse.Namespace) -> int:
         if is_branch_in_worktree(sel):
             worktree_path = get_worktree_path(sel)
             if worktree_path:
-                print(worktree_path)
+                write_path_file(worktree_path)
             else:
                 print(sel)
             return 0
@@ -624,7 +884,7 @@ def interactive(args: argparse.Namespace) -> int:
     if is_branch_in_worktree(sel):
         worktree_path = get_worktree_path(sel)
         if worktree_path:
-            print(worktree_path)
+            write_path_file(worktree_path)
         else:
             print(sel)
         return 0
@@ -689,6 +949,8 @@ def main(argv: list[str] | None = None) -> int:
             ensure_git_repo(required=True)
             print_current_status_preview(args.no_color)
             return 0
+        if args.browse_prs:
+            return browse_pull_requests(args)
         if (
             args.preview_ref
             or args.open_ref

@@ -60,6 +60,31 @@ def test_fzf_select_builds_command_and_parses(monkeypatch):
     assert cmd.count("--bind") == 1
 
 
+def test_fzf_select_with_expect(monkeypatch):
+    class _P:
+        def __init__(self, cmd, stdin=None, stdout=None, text=False):  # noqa: ANN001
+            self.cmd = cmd
+            self.stdin = types.SimpleNamespace(write=lambda s: None, close=lambda: None)
+            output = "alt-w\nshown\tvalue\n"
+            self.stdout = types.SimpleNamespace(read=lambda: output)
+
+        def wait(self):  # noqa: D401
+            return 0
+
+    monkeypatch.setattr(fzf_ui.subprocess, "Popen", _P)
+    rows = [("Shown", "value")]
+    key, values = fzf_ui.fzf_select(
+        rows,
+        header="hdr",
+        preview_cmd=None,
+        multi=False,
+        extra_binds=None,
+        expect_keys=["enter", "alt-w"],
+    )
+    assert key == "alt-w"
+    assert values == ["value"]
+
+
 def test_select_remote(monkeypatch):
     # Simulate git remote output and fzf selecting one
     class CP:

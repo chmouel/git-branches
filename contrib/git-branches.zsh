@@ -3,6 +3,7 @@
 #
 # redefine this variable for your environment
 local worktree_dir=${GB_BASEDIR:-$HOME/git/pac/trees}
+local path_file="/tmp/.git-branches-path"
 
 function __git_branch() {
     last_arg=${@: -1}
@@ -10,24 +11,20 @@ function __git_branch() {
         cd ${worktree_dir}/${last_arg}
         return
     fi
-    tmpfile=$(mktemp)
-    tmpfile2=$(mktemp)
-    trap 'rm -f "$tmpfile" "$tmpfile2"' EXIT
-
+    trap 'rm -f ${path_file}' EXIT
+    rm -f ${path_file} 2>/dev/null
     (( $+commands[git-branches] )) ||{
         echo "command git-branches is not found"
         return 1
     }
-    output=$($commands[git-branches] $@ >${tmpfile} 2>${tmpfile2}; echo $?)
-    if test -s ${tmpfile}; then
-        output="${(f)$(<"$tmpfile")}"
+    $commands[git-branches] $@
+    if test -s ${path_file}; then
+        output="${(f)$(<"$path_file")}"
         [[ -d ${output} ]] && {
             cd ${output}
             return
         }
         cat ${output}
-    elif test -s ${tmpfile2}; then
-        cat ${tmpfile2} >&2
     fi
 }
 

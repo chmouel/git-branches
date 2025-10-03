@@ -11,7 +11,8 @@ def fzf_select(
     preview_cmd: list[str] | None,
     multi: bool = False,
     extra_binds: list[str] | None = None,
-) -> list[str]:
+    expect_keys: list[str] | None = None,
+) -> list[str] | tuple[str | None, list[str]]:
     if not rows:
         return []
     import shlex
@@ -60,16 +61,30 @@ def fzf_select(
     if all_binds:
         cmd.extend(["--bind", ",".join(all_binds)])
 
+    if expect_keys:
+        cmd.extend(["--expect", ",".join(expect_keys)])
+
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
     assert proc.stdin is not None and proc.stdout is not None
     proc.stdin.write(input_text)
     proc.stdin.close()
     out = proc.stdout.read() or ""
     proc.wait()
+    lines = out.splitlines()
     selected: list[str] = []
-    for line in out.splitlines():
+    key_pressed: str | None = None
+    start_idx = 0
+    if expect_keys:
+        if lines:
+            key_pressed = lines[0] or None
+            start_idx = 1
+        else:
+            key_pressed = None
+    for line in lines[start_idx:]:
         if "\t" in line:
             selected.append(line.split("\t", 1)[1])
+    if expect_keys:
+        return key_pressed, selected
     return selected
 
 

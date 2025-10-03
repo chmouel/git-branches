@@ -108,6 +108,41 @@ def test_get_pr_status_from_cache(monkeypatch):
     assert github.get_pr_status_from_cache("missing", colors) == ""
 
 
+def test_detect_base_remote_prefers_upstream(monkeypatch):
+    monkeypatch.setattr(
+        github,
+        "run",
+        lambda cmd, check=True: types.SimpleNamespace(stdout="upstream\norigin\n"),
+    )
+    monkeypatch.setattr(
+        github,
+        "detect_github_repo",
+        lambda remote: ("o", "r") if remote == "upstream" else None,
+    )
+    assert github.detect_base_remote() == ("upstream", "o", "r")
+
+
+def test_detect_base_remote_fallback(monkeypatch):
+    monkeypatch.setattr(
+        github,
+        "run",
+        lambda cmd, check=True: types.SimpleNamespace(stdout="custom\n"),
+    )
+    monkeypatch.setattr(
+        github,
+        "detect_github_repo",
+        lambda remote: ("o", "r") if remote == "custom" else None,
+    )
+    assert github.detect_base_remote() == ("custom", "o", "r")
+
+
+def test_get_cached_pull_requests(monkeypatch):
+    _reset_github_caches()
+    monkeypatch.setattr(github, "_fetch_prs_and_populate_cache", lambda: None)
+    github._pr_cache.update({"branch": {"number": 7}})  # noqa: SLF001
+    assert github.get_cached_pull_requests() == [("branch", {"number": 7})]
+
+
 def test_find_pr_for_ref_uses_details_cache(monkeypatch):
     _reset_github_caches()
     monkeypatch.delenv("GIT_BRANCHES_OFFLINE", raising=False)

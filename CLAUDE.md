@@ -82,7 +82,11 @@ The tool supports several environment variables that affect behavior:
 IMPORTANT:
 
 - Always run `ruff check --fix --unsafe-fixes` after modifying code.
-- Always finish your task by running a `make test` to ensure all tests pass. If
+- Always finish your task by running a `make test` to ensure all tests pass.
 - You ever add a visual changes make sure to document it in the README.md file.
 - If you add a new feature or change existing functionality, make sure it's
 documented in the README.md file.
+_- You can use the binary `git-branches` to run the program, it will be in the
+  path and link to the latest code. But be careful since it will launch fzf and
+  you will not be able to interact with the terminal._
+- Always use `uv` like this `uv run git-branches` to run the program.

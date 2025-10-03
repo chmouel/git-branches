@@ -44,6 +44,10 @@ def test_parser_flags():
             "--fast",
             "--pr-only",
             "--worktree",
+            "--prs",
+            "--pr-states",
+            "OPEN",
+            "MERGED",
         ]
     )  # noqa: F841
     assert ns.remote_mode
@@ -57,6 +61,8 @@ def test_parser_flags():
     assert ns.fast
     assert ns.pr_only
     assert ns.worktree
+    assert ns.browse_prs
+    assert ns.pr_states == ["OPEN", "MERGED"]
 
 
 def test_fast_mode_sets_environment_variables(monkeypatch):
@@ -1112,3 +1118,213 @@ def test_build_rows_local_worktree_filtering(monkeypatch):
     rows_worktree_only = cli._build_rows_local(False, None, colors, worktree=True)
     assert len(rows_worktree_only) == 1
     assert rows_worktree_only[0][1] == "branch-with-worktree"
+
+
+def test_slugify_title_variants():
+    assert cli._slugify_title("Feature: Add/Remove!") == "feature-add-remove"
+    assert cli._slugify_title("   ") == "pr"
+    slug = cli._slugify_title("x" * 200)
+    assert len(slug) <= cli._PR_SLUG_LIMIT
+
+
+def test_derive_pr_branch_name_truncates():
+    branch = cli._derive_pr_branch_name(99, "A" * 200)
+    assert branch.startswith("pr-99-")
+    assert len(branch) <= cli._PR_BRANCH_LIMIT
+
+
+def test_build_pr_rows(monkeypatch):
+    monkeypatch.setattr(
+        github, "get_cached_pull_requests", lambda: [("branch", {"number": 7, "title": "Title"})]
+    )
+    monkeypatch.setattr(github, "get_pr_status_from_cache", lambda branch, colors: "*")
+    monkeypatch.setattr(cli, "_has_local_branch", lambda branch: False)
+    monkeypatch.setattr(cli, "is_branch_in_worktree", lambda branch: False)
+    colors = render.Colors()
+    rows, index = cli._build_pr_rows(colors, {"OPEN"})
+    assert rows[0][1] == "7"
+    assert "#7" in rows[0][0]
+    assert "Title" in rows[0][0]
+    assert index["7"]["title"] == "Title"
+
+
+def test_build_pr_rows_filters_states(monkeypatch):
+    prs = [
+        ("branch-open", {"number": 1, "title": "Open PR", "state": "OPEN"}),
+        ("branch-closed", {"number": 2, "title": "Closed PR", "state": "CLOSED"}),
+    ]
+    monkeypatch.setattr(github, "get_cached_pull_requests", lambda: prs)
+    monkeypatch.setattr(github, "get_pr_status_from_cache", lambda branch, colors: "*")
+    monkeypatch.setattr(cli, "_has_local_branch", lambda branch: False)
+    monkeypatch.setattr(cli, "is_branch_in_worktree", lambda branch: False)
+    colors = render.Colors()
+    rows, index = cli._build_pr_rows(colors, {"OPEN"})
+    assert len(rows) == 1
+    assert rows[0][1] == "1"
+    assert index["1"]["title"] == "Open PR"
+    rows_all, _ = cli._build_pr_rows(colors, {"ALL"})
+    assert len(rows_all) == 2
+
+
+def test_build_pr_rows_marks_local_and_worktree(monkeypatch):
+    monkeypatch.setattr(
+        github,
+        "get_cached_pull_requests",
+        lambda: [("feature", {"number": 3, "title": "Feature", "state": "OPEN"})],
+    )
+    monkeypatch.setattr(github, "get_pr_status_from_cache", lambda branch, colors: "")
+    monkeypatch.setattr(cli, "_has_local_branch", lambda branch: branch == "feature")
+    monkeypatch.setattr(cli, "is_branch_in_worktree", lambda branch: branch == "feature")
+    colors = render.Colors()
+    rows, _ = cli._build_pr_rows(colors, {"OPEN"})
+    display = rows[0][0]
+    assert "" in display
+    assert "" in display
+
+
+def test_checkout_pr_branch(monkeypatch, capsys):
+    import types
+
+    commands: list[list[str]] = []
+
+    def fake_run(cmd, cwd=None, check=True):  # noqa: ANN001, ARG001
+        commands.append(cmd)
+        return types.SimpleNamespace(stdout="")
+
+    monkeypatch.setattr(cli, "run", fake_run)
+    monkeypatch.setattr(cli, "_is_workdir_dirty", lambda: False)
+    monkeypatch.setattr(cli, "which", lambda cmd: True)
+    monkeypatch.setattr(cli, "confirm", lambda msg: True)
+    rc = cli._checkout_pr_branch(
+        {"number": 5, "title": "New Feature", "headRefName": "pr-5-new-feature"}, "origin"
+    )
+    assert rc == 0
+    assert [
+        "gh",
+        "pr",
+        "checkout",
+        "5",
+        "--branch",
+        "pr-5-new-feature",
+        "--force",
+    ] in commands
+    out = capsys.readouterr().out
+    assert "pr-5-new-feature" in out
+
+
+def test_create_worktree_from_pr(monkeypatch, tmp_path, capsys):
+    import types
+
+    commands: list[list[str]] = []
+    worktree_dir = tmp_path / "trees"
+    worktree_dir.mkdir()
+
+    def fake_run(cmd, cwd=None, check=True):  # noqa: ANN001, ARG001
+        commands.append(cmd)
+        return types.SimpleNamespace(stdout="")
+
+    monkeypatch.setattr(cli, "run", fake_run)
+    monkeypatch.setattr(cli, "_worktree_base_dir", lambda: worktree_dir)
+    monkeypatch.setattr(cli, "_is_workdir_dirty", lambda: False)
+    monkeypatch.setattr(cli, "which", lambda cmd: True)
+    monkeypatch.setattr(cli, "get_current_branch", lambda: "main")
+    saved: dict[str, str] = {}
+    monkeypatch.setattr(
+        worktrees, "save_last_worktree", lambda path: saved.setdefault("path", path)
+    )
+    monkeypatch.setattr(cli, "confirm", lambda msg: True)
+    monkeypatch.setattr(cli, "write_path_file", lambda path: print(path))
+    rc = cli._create_worktree_from_pr(
+        {"number": 9, "title": "Do Things", "headRefName": "pr-9-do-things"}
+    )
+    assert rc == 0
+    expected = worktree_dir / "pr-9-do-things"
+    assert [
+        "gh",
+        "pr",
+        "checkout",
+        "9",
+        "--branch",
+        "pr-9-do-things",
+        "--force",
+    ] in commands
+    assert ["git", "worktree", "add", str(expected)] in commands
+    assert saved["path"] == str(expected)
+    assert capsys.readouterr().out.strip() == str(expected)
+
+
+def test_browse_pull_requests_checkout(monkeypatch):
+    import types
+
+    args = types.SimpleNamespace(no_color=False, pr_states=["OPEN"])
+    monkeypatch.setattr(cli, "ensure_deps", lambda interactive=True: None)
+    monkeypatch.setattr(cli, "setup_colors", lambda no_color: render.Colors())
+    monkeypatch.setattr(github, "detect_base_remote", lambda: ("origin", "o", "r"))
+    monkeypatch.setattr(
+        github,
+        "get_cached_pull_requests",
+        lambda: [("branch", {"number": 3, "title": "Hello"})],
+    )
+    monkeypatch.setattr(github, "get_pr_status_from_cache", lambda branch, colors: "*")
+    monkeypatch.setattr(cli, "_has_local_branch", lambda branch: False)
+    monkeypatch.setattr(cli, "is_branch_in_worktree", lambda branch: False)
+    calls: list[tuple[str, int]] = []
+
+    def fake_checkout(pr, remote):  # noqa: ANN001
+        calls.append((remote, pr["number"]))
+        return 0
+
+    monkeypatch.setattr(cli, "_checkout_pr_branch", fake_checkout)
+
+    def unexpected_worktree(*_args, **_kwargs):  # noqa: ANN001, ANN003
+        raise AssertionError("unexpected worktree")
+
+    monkeypatch.setattr(cli, "_create_worktree_from_pr", unexpected_worktree)
+    monkeypatch.setattr(cli, "fzf_select", lambda *a, **k: ("enter", ["3"]))
+    rc = cli.browse_pull_requests(args)
+    assert rc == 0
+    assert calls == [("origin", 3)]
+
+
+def test_browse_pull_requests_worktree(monkeypatch):
+    import types
+
+    args = types.SimpleNamespace(no_color=False, pr_states=["OPEN"])
+    monkeypatch.setattr(cli, "ensure_deps", lambda interactive=True: None)
+    monkeypatch.setattr(cli, "setup_colors", lambda no_color: render.Colors())
+    monkeypatch.setattr(github, "detect_base_remote", lambda: ("origin", "o", "r"))
+    monkeypatch.setattr(
+        github,
+        "get_cached_pull_requests",
+        lambda: [("branch", {"number": 4, "title": "World"})],
+    )
+    monkeypatch.setattr(github, "get_pr_status_from_cache", lambda branch, colors: "*")
+    monkeypatch.setattr(cli, "_has_local_branch", lambda branch: False)
+    monkeypatch.setattr(cli, "is_branch_in_worktree", lambda branch: False)
+    calls: list[tuple[str, int]] = []
+
+    def fake_worktree(pr):  # noqa: ANN001
+        calls.append(("origin", pr["number"]))
+        return 0
+
+    monkeypatch.setattr(cli, "_create_worktree_from_pr", fake_worktree)
+
+    def unexpected_checkout(*_args, **_kwargs):  # noqa: ANN001, ANN003
+        raise AssertionError("unexpected checkout")
+
+    monkeypatch.setattr(cli, "_checkout_pr_branch", unexpected_checkout)
+    monkeypatch.setattr(cli, "fzf_select", lambda *a, **k: ("alt-w", ["4"]))
+    rc = cli.browse_pull_requests(args)
+    assert rc == 0
+    assert calls == [("origin", 4)]
+
+
+def test_browse_pull_requests_requires_github(monkeypatch):
+    import types
+
+    args = types.SimpleNamespace(no_color=False, pr_states=["OPEN"])
+    monkeypatch.setattr(cli, "ensure_deps", lambda interactive=True: None)
+    monkeypatch.setattr(cli, "setup_colors", lambda no_color: render.Colors())
+    monkeypatch.setattr(github, "detect_base_remote", lambda: None)
+    rc = cli.browse_pull_requests(args)
+    assert rc == 1

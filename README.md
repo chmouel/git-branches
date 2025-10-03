@@ -86,12 +86,20 @@ brew install --HEAD chmouel/git-branches/git-branches
 - Browse remotes and checkout (creates tracking branch if needed):
   - `git-branches -r` (select remote interactively)
   - `git-branches -R origin`
+- Browse GitHub pull requests and act on them:
+  - `git-branches --prs` (Enter=checkout, Alt-w=create worktree)
 - Deletion workflows:
   - `git-branches -d` (delete local; multi-select)
   - `git-branches -D -R origin` (delete remote)
 - See if local branches exist on the remote:
   - `git-branches -s` (shows pushed status with default limit of 10)
   - `git-branches -s -S` (disable default limit)
+
+### Pull Request Browser
+
+`git-branches --prs` opens an fzf view of the repository's GitHub pull requests (requires a GitHub remote and the [`gh` CLI](https://cli.github.com/)). Use **Enter** to fetch-and-checkout a local branch via `gh pr checkout`, or **Alt-w** to create a dedicated worktree after the branch has been materialised. Titles are sanitised (non POSIX-friendly characters replaced by `-` and truncated to 60 characters) to produce stable branch and directory names; existing directories receive a numeric suffix. Worktrees are placed under `GIT_BRANCHES_WORKTREE_BASEDIR` / `PM_BASEDIR` when set, otherwise alongside the repository in a `<repo>-worktrees` directory.
+
+By default only **OPEN** pull requests are shown. Use `--pr-states <STATE...>` (e.g. `--pr-states OPEN MERGED`) to include additional states, or pass `ALL` to display every cached PR state. Icons within the PR list highlight local context: `` means the branch already exists locally, and `` indicates that the branch lives in a worktree.
 
 ## Command-line options 🧭
 
@@ -110,6 +118,8 @@ brew install --HEAD chmouel/git-branches/git-branches
 - `--refresh`: Force refresh of PR cache (ignore stale cache and ETag)
 - `--checks`: Fetch and show GitHub Actions status (preview and a small indicator in rows). Without this flag, cached results (if available) are still displayed, but no network calls are made for checks.
 - `--worktree`: Show only branches that have worktrees
+- `--prs`: Browse GitHub pull requests (Enter=checkout branch, Alt-w=create worktree with sanitized title)
+- `--pr-states <STATE...>`: Filter PR browser states (default: OPEN; use ALL to include every state)
 
 ### Preview & Integration Options
 

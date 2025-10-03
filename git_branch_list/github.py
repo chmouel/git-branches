@@ -12,6 +12,8 @@ from .jira_integration import format_jira_section, get_jira_tickets_for_branch
 from .progress import Spinner
 from .render import Colors, format_pr_details, git_log_oneline, setup_colors, truncate_display
 
+DEFAULT_PR_STATES = ["OPEN"]
+
 try:  # runtime-only via uv
     import requests  # type: ignore
 except Exception:  # pragma: no cover
@@ -200,6 +202,32 @@ def detect_base_repo() -> tuple[str, str] | None:
     return None
 
 
+def detect_base_remote() -> tuple[str, str, str] | None:
+    """Return (remote_name, owner, repo) for the primary GitHub remote."""
+    try:
+        cp = run(["git", "remote"])
+        remotes = [r.strip() for r in cp.stdout.splitlines() if r.strip()]
+    except Exception:
+        remotes = []
+
+    for cand in ("upstream", "origin"):
+        if cand in remotes:
+            detected = detect_github_repo(cand)
+            if detected:
+                owner, repo = detected
+                return cand, owner, repo
+
+    for remote in remotes:
+        if remote in {"upstream", "origin"}:
+            continue
+        detected = detect_github_repo(remote)
+        if detected:
+            owner, repo = detected
+            return remote, owner, repo
+
+    return None
+
+
 def _github_token() -> str:
     if token := os.environ.get("GITHUB_TOKEN", "").strip():
         return token
@@ -305,12 +333,14 @@ def get_pr_status_from_cache(branch: str, colors: Colors) -> str:
     return f"{colors.green}{colors.reset}"
 
 
-def _fetch_prs_and_populate_cache() -> None:
+def _fetch_prs_and_populate_cache(states: list[str] | None = None) -> None:
     """Populate in-memory PR cache using a single GraphQL query.
 
     Builds a mapping keyed by branch name (head.ref) with minimal PR fields for
     fast status rendering. Stores a short-lived on-disk cache to reduce API calls.
     """
+    if states is None:
+        states = DEFAULT_PR_STATES
     global _pr_cache
     if _pr_cache:
         return
@@ -351,15 +381,15 @@ def _fetch_prs_and_populate_cache() -> None:
         if tok:
             gh_headers["Authorization"] = f"Bearer {tok}"
         query = """
-        query RepositoryPullRequests($owner: String!, $repo: String!) {
-            repository(owner: $owner, name: $repo) {
-              pullRequests(first: 100, states: [OPEN, CLOSED, MERGED], orderBy: {field: UPDATED_AT, direction: DESC}) {
-                nodes { ...pr_fields }
-              }
-            }
-        }
+        query RepositoryPullRequests($owner: String!, $repo: String!) {{
+            repository(owner: $owner, name: $repo) {{
+              pullRequests(first: 100, states: [{}], orderBy: {{field: UPDATED_AT, direction: DESC}}) {{
+                nodes {{ ...pr_fields }}
+              }}
+            }}
+        }}
 
-        fragment pr_fields on PullRequest {
+        fragment pr_fields on PullRequest {{
             url,
             number,
             state,
@@ -368,15 +398,15 @@ def _fetch_prs_and_populate_cache() -> None:
             mergedAt,
             headRefName,
             headRefOid,
-            author {
+            author {{
                 login
-            },
-            baseRepository {
-                owner { login },
+            }},
+            baseRepository {{
+                owner {{ login }},
                 name
-            }
-        }
-        """
+            }}
+        }}
+        """.format(', '.join(states).upper())
         variables = {"owner": owner, "repo": repo}
         url = "https://api.github.com/graphql"
         sp: Spinner | None = None
@@ -398,6 +428,14 @@ def _fetch_prs_and_populate_cache() -> None:
                 json.dump({"timestamp": time.time(), "prs": _pr_cache}, f)
     except Exception:
         pass
+
+
+def get_cached_pull_requests() -> list[tuple[str, dict]]:
+    """Return cached pull requests keyed by branch name."""
+    _fetch_prs_and_populate_cache()
+    if not _pr_cache:
+        return []
+    return list(_pr_cache.items())
 
 
 def _find_pr_for_ref(

@@ -152,16 +152,16 @@ def test_is_branch_in_worktree(monkeypatch):
     monkeypatch.setattr(
         git_ops, "run", lambda cmd, check=True: types.SimpleNamespace(stdout=worktree_output)
     )
-    assert git_ops.is_branch_in_worktree("feature") is True
-    assert git_ops.is_branch_in_worktree("main") is True
-    assert git_ops.is_branch_in_worktree("nonexistent") is False
+    assert git_ops.is_branch_in_worktree("feature") == "/path/to/worktree"
+    assert git_ops.is_branch_in_worktree("main") == "/path/to/main"
+    assert git_ops.is_branch_in_worktree("nonexistent") == ""
 
     # Error case
     def _fail(cmd, check=True):  # noqa: ANN001, ARG001
         raise git_ops.subprocess.CalledProcessError(1, cmd)
 
     monkeypatch.setattr(git_ops, "run", _fail)
-    assert git_ops.is_branch_in_worktree("feature") is False
+    assert git_ops.is_branch_in_worktree("feature") == ""
 
 
 def test_get_worktree_path(monkeypatch):
