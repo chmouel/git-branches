@@ -1,12 +1,46 @@
 #compdef git-branches po
 
-local worktree_dir=${HOME}/git/pac/trees
+local worktree_dir=${GIT_BRANCHES_WORKTREE_BASEDIR:-$HOME/git/pac/trees}
 
 local ret=1
-_arguments -C : \
-    '1:worktree:->worktree' && return 0
+_arguments -C \
+    '-r[Browse remote branches (interactive remote selection)]:remote' \
+    '-R[Browse specific remote branches]:remote name:->git_remotes' \
+    '-d[Delete local branches (interactive multi-select)]' \
+    '--directory=[Directory to run in]:directory:_directories' \
+    '-D[Delete remote branches (interactive multi-select)]' \
+    '-s[Show GitHub pushed status]' \
+    '-n[Limit to first NUM branches]:number' \
+    '-C[Disable colors]' \
+    '-l[List mode only (no checkout)]' \
+    '--checks[Fetch and show GitHub Actions status]' \
+    '--refresh[Force refresh PR cache]' \
+    '--fast[Super fast offline mode]' \
+    '--pr-only[Show only branches that have pull requests]' \
+    '--no-wip[Filter out WIP branches]' \
+    '--no-pr[Filter out branches that have pull requests]' \
+    '--worktree[Show only branches that have worktrees]' \
+    '--prs[Browse pull requests]' \
+    '--pr-states[PR states to include]:(open closed merged all)' \
+    '--exclude=[Exclude branches matching regex pattern]:pattern' \
+    '--jira-pattern=[Regex pattern for JIRA ticket detection]:regex' \
+    '--jira-url=[JIRA base URL for ticket links]:url:_urls' \
+    '--no-jira[Disable JIRA ticket integration in previews]' \
+    '--base-branch=[Base branch for comparisons]:branch name' \
+    '--status[Show current git status and preview]' \
+    '--help[Show this message and exit]' \
+    '*::arg:->worktree' && return 0
 
 case $state in
+    git_remotes)
+        local -a remotes descrs
+        local url
+        for r in ${(f)"$(git remote 2>/dev/null)"};do
+            url=$(git remote get-url $r 2>/dev/null)
+            descrs+=( "$r:$url" )
+        done
+        _describe -t remotes 'Git Remotes' descrs && ret=0
+        ;;
     worktree)
         local -a profiles descrs
         local repo branch msg
@@ -18,7 +52,6 @@ case $state in
                 branch=${branch//$'\n'/}
                 msg=$(git -C "$repo" log -1 --pretty=%s 2>/dev/null)
                 msg=${msg//$'\n'/}
-                # leave room: "[branch] -- " ~ length(branch)+6
                 integer room; room=$COLUMNS
                 (( room = room - ${#branch} - 6 ))
                 (( room < 10 )) && room=10
