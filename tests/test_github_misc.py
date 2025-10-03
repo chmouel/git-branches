@@ -7,7 +7,7 @@ from git_branch_list import github, render
 
 
 def _reset_github_caches():
-    github._pr_cache.clear()  # noqa: SLF001
+    github.pr_cache.clear()  # noqa: SLF001
     github._pr_details_cache.clear()  # noqa: SLF001
     github._actions_cache.clear()  # noqa: SLF001
     github._actions_disk_loaded = False  # noqa: SLF001
@@ -15,17 +15,17 @@ def _reset_github_caches():
 
 def test_actions_status_icon_variants():
     colors = render.Colors(green="G", yellow="Y", red="R", cyan="C", magenta="M", reset="X")
-    icon, label = github._actions_status_icon("success", "completed", colors)
+    icon, label = github.actions_status_icon("success", "completed", colors)
     assert "G" in icon and label == "Success"
-    icon, label = github._actions_status_icon("failure", "completed", colors)
+    icon, label = github.actions_status_icon("failure", "completed", colors)
     assert "R" in icon and label == "Failed"
-    icon, label = github._actions_status_icon("cancelled", "completed", colors)
+    icon, label = github.actions_status_icon("cancelled", "completed", colors)
     assert "R" in icon and label == "Cancelled"
-    icon, label = github._actions_status_icon("neutral", "completed", colors)
+    icon, label = github.actions_status_icon("neutral", "completed", colors)
     assert "C" in icon and label == "Skipped"
-    icon, label = github._actions_status_icon(None, "in_progress", colors)
+    icon, label = github.actions_status_icon(None, "in_progress", colors)
     assert "Y" in icon and label == "In progress"
-    icon, label = github._actions_status_icon(None, None, colors)
+    icon, label = github.actions_status_icon(None, None, colors)
     assert label in {"Unknown", "None"}
 
 
@@ -93,7 +93,7 @@ def test_prefetch_actions_for_shas(monkeypatch):
 def test_get_pr_status_from_cache(monkeypatch):
     colors = render.Colors(green="G", yellow="Y", red="R", magenta="M", reset="X")
     _reset_github_caches()
-    github._pr_cache.update(
+    github.pr_cache.update(
         {  # noqa: SLF001
             "open": {"state": "open", "isDraft": False},
             "draft": {"state": "open", "isDraft": True},
@@ -139,7 +139,7 @@ def test_detect_base_remote_fallback(monkeypatch):
 def test_get_cached_pull_requests(monkeypatch):
     _reset_github_caches()
     monkeypatch.setattr(github, "_fetch_prs_and_populate_cache", lambda: None)
-    github._pr_cache.update({"branch": {"number": 7}})  # noqa: SLF001
+    github.pr_cache.update({"branch": {"number": 7}})  # noqa: SLF001
     assert github.get_cached_pull_requests() == [("branch", {"number": 7})]
 
 

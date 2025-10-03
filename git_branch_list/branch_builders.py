@@ -20,12 +20,12 @@ import sys
 
 from . import github
 from .git_ops import (build_last_commit_cache_for_refs, get_current_branch,
-                      get_last_commit_from_cache, iter_local_branches,
-                      iter_remote_branches)
+                      get_last_commit_from_cache, is_branch_in_worktree,
+                      iter_local_branches, iter_remote_branches)
 from .render import Colors, format_branch_info
-from .utils import _has_local_branch, _is_workdir_dirty, _local_branch_icon, _worktree_icon
 
 
+# pylint: disable=too-many-positional-arguments
 def _build_rows_local(
     show_status: bool,
     limit: int | None,
@@ -36,7 +36,6 @@ def _build_rows_local(
     worktree: bool = False,
     exclude_pattern: str | None = None,
 ) -> list[tuple[str, str]]:
-    from .git_ops import is_branch_in_worktree
     current = get_current_branch()
     rows: list[tuple[str, str]] = []
     maxw = os.get_terminal_size().columns if sys.stdout.isatty() else 120
@@ -47,14 +46,14 @@ def _build_rows_local(
 
     if not fast_mode:
         base = github.detect_base_repo()
-        github._fetch_prs_and_populate_cache()
+        github.fetch_prs_and_populate_cache()
         # Optional PR detail prefetch for preview performance
         if os.environ.get("GIT_BRANCHES_PREFETCH_DETAILS") in ("1", "true", "yes"):
             github.prefetch_pr_details(branches)
         # Preload commit info cache with a single for-each-ref call
         build_last_commit_cache_for_refs([f"refs/heads/{b}" for b in branches])
         # Optionally prefetch Actions status for these SHAs if checks are enabled
-        if github._checks_enabled():  # noqa: SLF001
+        if github.checks_enabled():  # noqa: SLF001
             shas: list[str] = []
             for b in branches:
                 info = get_last_commit_from_cache(b)
@@ -77,7 +76,7 @@ def _build_rows_local(
             if info:
                 act = github.peek_actions_status_for_sha(info[1])
                 if act:
-                    icon, _ = github._actions_status_icon(  # noqa: SLF001
+                    icon, _ = github.actions_status_icon(  # noqa: SLF001
                         act.get("conclusion"), act.get("status"), colors
                     )
                     status = f"{status} {icon}" if status else icon
@@ -114,15 +113,15 @@ def _build_rows_local(
         is_own_pr = False
         if not fast_mode:
             # Check if branch has PR data in cache
-            if b in github._pr_cache:  # noqa: SLF001
-                pr_data = github._pr_cache[b]  # noqa: SLF001
+            if b in github.pr_cache:  # noqa: SLF001
+                pr_data = github.pr_cache[b]  # noqa: SLF001
                 pr_number = str(pr_data.get("number", ""))
                 pr_title = pr_data.get("title", "")
                 if pr_number and pr_title:
                     pr_info = (pr_number, pr_title)
                     # Check if this PR is by the current user
                     pr_author = pr_data.get("author", {}).get("login", "")
-                    current_user = github._get_current_github_user()  # noqa: SLF001
+                    current_user = github.get_current_github_user()  # noqa: SLF001
                     is_own_pr = pr_author == current_user and current_user != ""
 
         # Check if branch is in a worktree
@@ -156,6 +155,7 @@ def _build_rows_remote(
     exclude_pattern: str | None = None,
 ) -> list[tuple[str, str]]:
     from .git_ops import is_branch_in_worktree
+
     rows: list[tuple[str, str]] = []
     maxw = os.get_terminal_size().columns if sys.stdout.isatty() else 120
     branches = list(iter_remote_branches(remote, limit))
@@ -164,12 +164,12 @@ def _build_rows_remote(
     fast_mode = os.environ.get("GIT_BRANCHES_OFFLINE") == "1"
 
     if not fast_mode:
-        github._fetch_prs_and_populate_cache()
+        github.fetch_prs_and_populate_cache()
         if os.environ.get("GIT_BRANCHES_PREFETCH_DETAILS") in ("1", "true", "yes"):
             github.prefetch_pr_details([f"{remote}/{b}" for b in branches])
         # Preload commit info cache for remote refs
         build_last_commit_cache_for_refs([f"refs/remotes/{remote}/{b}" for b in branches])
-        if github._checks_enabled():  # noqa: SLF001
+        if github.checks_enabled():  # noqa: SLF001
             shas: list[str] = []
             for b in branches:
                 info = get_last_commit_from_cache(f"{remote}/{b}")
@@ -190,7 +190,7 @@ def _build_rows_remote(
             if info:
                 act = github.peek_actions_status_for_sha(info[1])
                 if act:
-                    icon, _ = github._actions_status_icon(  # noqa: SLF001
+                    icon, _ = github.actions_status_icon(  # noqa: SLF001
                         act.get("conclusion"), act.get("status"), colors
                     )
                     status = f"{status} {icon}" if status else icon
@@ -219,15 +219,15 @@ def _build_rows_remote(
         is_own_pr = False
         if not fast_mode:
             # Check if branch has PR data in cache
-            if b in github._pr_cache:  # noqa: SLF001
-                pr_data = github._pr_cache[b]  # noqa: SLF001
+            if b in github.pr_cache:  # noqa: SLF001
+                pr_data = github.pr_cache[b]  # noqa: SLF001
                 pr_number = str(pr_data.get("number", ""))
                 pr_title = pr_data.get("title", "")
                 if pr_number and pr_title:
                     pr_info = (pr_number, pr_title)
                     # Check if this PR is by the current user
                     pr_author = pr_data.get("author", {}).get("login", "")
-                    current_user = github._get_current_github_user()  # noqa: SLF001
+                    current_user = github.get_current_github_user()  # noqa: SLF001
                     is_own_pr = pr_author == current_user and current_user != ""
 
         # Check if branch is in a worktree
@@ -249,3 +249,4 @@ def _build_rows_remote(
         )
         rows.append((row, b))
     return rows
+

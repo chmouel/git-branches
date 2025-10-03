@@ -17,6 +17,7 @@ to appropriate handlers based on the requested operation:
 For backward compatibility with tests, this module re-exports functions
 from other modules that were previously defined here.
 """
+# pylint: disable=too-many-return-statements,too-many-boolean-expressions
 
 from __future__ import annotations
 
@@ -33,11 +34,6 @@ from .render import setup_colors
 from .status_preview import print_current_status_preview
 
 # Re-export functions for backward compatibility with tests
-from .utils import _slugify_title, _worktree_base_dir, _has_local_branch, _local_branch_icon, _worktree_icon, _is_workdir_dirty, write_path_file, _create_worktree_from_pr, _PR_SLUG_LIMIT, _PR_BRANCH_LIMIT
-from .pr_handlers import _checkout_pr_branch, _build_pr_rows
-from .branch_builders import _build_rows_local as _build_rows_local_compat, _build_rows_remote as _build_rows_remote_compat
-from .git_ops import ensure_deps, iter_local_branches, iter_remote_branches, get_current_branch, is_branch_in_worktree, which, remote_ssh_url
-from .fzf_ui import confirm, fzf_select, select_remote
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -51,7 +47,11 @@ def main(argv: list[str] | None = None) -> int:
             os.environ["GIT_BRANCHES_PREFETCH_DETAILS"] = "0"
 
         if args.directory:
-            os.chdir(args.directory)
+            try:
+                os.chdir(args.directory)
+            except (OSError, FileNotFoundError) as e:
+                print(f"Error: Cannot change to directory '{args.directory}': {e}", file=sys.stderr)
+                return 1
 
         # Flags removed; env vars can still be set by the user
         if args.refresh:

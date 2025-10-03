@@ -426,7 +426,7 @@ def test_worktree_cache_helpers(monkeypatch, tmp_path):
 
 
 def _reset_github_caches():
-    github._pr_cache.clear()  # noqa: SLF001
+    github.pr_cache.clear()  # noqa: SLF001
     github._pr_details_cache.clear()  # noqa: SLF001
     github._actions_cache.clear()  # noqa: SLF001
     github._actions_disk_loaded = False  # noqa: SLF001
@@ -555,6 +555,7 @@ def test_remote_ssh_url(monkeypatch):
 
 def test_delete_local_flow(monkeypatch):
     from git_branch_list import interactive, parsers
+
     calls = []
     monkeypatch.setattr(git_ops, "ensure_deps", lambda interactive=True: None)
     monkeypatch.setattr(git_ops, "iter_local_branches", lambda limit: ["b1", "b2"])  # noqa: ARG005
@@ -844,7 +845,7 @@ def test_build_rows_local_pr_only_filtering(monkeypatch):
     monkeypatch.setattr(github, "get_pr_status_from_cache", mock_get_pr_status)
 
     # Mock PR cache to simulate branches with/without PRs
-    github._pr_cache = {"branch-with-pr": {"number": 123, "title": "Test PR"}}
+    github.pr_cache = {"branch-with-pr": {"number": 123, "title": "Test PR"}}
 
     colors = render.Colors()
 
@@ -861,7 +862,7 @@ def test_build_rows_local_pr_only_filtering(monkeypatch):
     assert rows_pr_only[0][1] == "branch-with-pr"
 
     # Clean up
-    github._pr_cache.clear()
+    github.pr_cache.clear()
 
 
 def test_build_rows_local_with_pr_info_display(monkeypatch):
@@ -889,7 +890,7 @@ def test_build_rows_local_with_pr_info_display(monkeypatch):
     monkeypatch.setattr(github, "get_pr_status_from_cache", lambda branch, colors: "")
 
     # Mock PR cache with test data
-    github._pr_cache = {"test-branch": {"number": 456, "title": "Amazing new feature"}}
+    github.pr_cache = {"test-branch": {"number": 456, "title": "Amazing new feature"}}
 
     colors = render.Colors()
 
@@ -904,7 +905,7 @@ def test_build_rows_local_with_pr_info_display(monkeypatch):
     assert "original commit subject" not in row_display
 
     # Clean up
-    github._pr_cache.clear()
+    github.pr_cache.clear()
 
 
 def test_build_rows_local_fast_mode_pr_only(monkeypatch):
@@ -960,7 +961,7 @@ def test_build_rows_remote_with_pr_info_display(monkeypatch):
     monkeypatch.setattr(github, "get_pr_status_from_cache", lambda branch, colors: "")
 
     # Mock PR cache with test data
-    github._pr_cache = {"test-remote-branch": {"number": 789, "title": "Remote branch feature"}}
+    github.pr_cache = {"test-remote-branch": {"number": 789, "title": "Remote branch feature"}}
 
     colors = render.Colors()
 
@@ -975,7 +976,7 @@ def test_build_rows_remote_with_pr_info_display(monkeypatch):
     assert "original commit subject" not in row_display
 
     # Clean up
-    github._pr_cache.clear()
+    github.pr_cache.clear()
 
 
 def test_build_rows_remote_fast_mode(monkeypatch):
@@ -1135,6 +1136,7 @@ def test_derive_pr_branch_name_truncates():
 
 def test_build_pr_rows(monkeypatch):
     from git_branch_list import pr_handlers
+
     monkeypatch.setattr(
         github, "get_cached_pull_requests", lambda: [("branch", {"number": 7, "title": "Title"})]
     )
@@ -1151,6 +1153,7 @@ def test_build_pr_rows(monkeypatch):
 
 def test_build_pr_rows_filters_states(monkeypatch):
     from git_branch_list import pr_handlers
+
     prs = [
         ("branch-open", {"number": 1, "title": "Open PR", "state": "OPEN"}),
         ("branch-closed", {"number": 2, "title": "Closed PR", "state": "CLOSED"}),
@@ -1170,6 +1173,7 @@ def test_build_pr_rows_filters_states(monkeypatch):
 
 def test_build_pr_rows_marks_local_and_worktree(monkeypatch):
     from git_branch_list import pr_handlers
+
     monkeypatch.setattr(
         github,
         "get_cached_pull_requests",
@@ -1186,8 +1190,9 @@ def test_build_pr_rows_marks_local_and_worktree(monkeypatch):
 
 
 def test_checkout_pr_branch(monkeypatch, capsys):
-    from git_branch_list import pr_handlers
     import types
+
+    from git_branch_list import pr_handlers
 
     commands: list[list[str]] = []
 
@@ -1198,7 +1203,6 @@ def test_checkout_pr_branch(monkeypatch, capsys):
     monkeypatch.setattr(git_ops, "run", fake_run)
     monkeypatch.setattr(utils, "_is_workdir_dirty", lambda: False)
     monkeypatch.setattr(git_ops, "which", lambda cmd: True)
-    from git_branch_list.fzf_ui import confirm
     monkeypatch.setattr("git_branch_list.pr_handlers.confirm", lambda msg: True)
     rc = pr_handlers._checkout_pr_branch(
         {"number": 5, "title": "New Feature", "headRefName": "pr-5-new-feature"}, "origin"
@@ -1237,7 +1241,6 @@ def test_create_worktree_from_pr(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(
         worktrees, "save_last_worktree", lambda path: saved.setdefault("path", path)
     )
-    from git_branch_list.fzf_ui import confirm
     monkeypatch.setattr("git_branch_list.utils.confirm", lambda msg: True)
     monkeypatch.setattr(utils, "write_path_file", lambda path: print(path))
     rc = utils._create_worktree_from_pr(

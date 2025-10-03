@@ -10,7 +10,8 @@ import webbrowser
 from .git_ops import run, which
 from .jira_integration import format_jira_section, get_jira_tickets_for_branch
 from .progress import Spinner
-from .render import Colors, format_pr_details, git_log_oneline, setup_colors, truncate_display
+from .render import (Colors, format_pr_details, git_log_oneline, setup_colors,
+                     truncate_display)
 
 DEFAULT_PR_STATES = ["OPEN"]
 
@@ -37,7 +38,7 @@ def _get_cache_dir() -> str:
 
 CACHE_DIR = _get_cache_dir()
 CACHE_FILE = os.path.join(CACHE_DIR, "prs.json")
-_pr_cache: dict[str, dict] = {}
+pr_cache: dict[str, dict] = {}
 _pr_details_cache: dict[str, dict] = {}
 _actions_cache: dict[str, dict] = {}
 _actions_disk_loaded: bool = False
@@ -62,7 +63,7 @@ def _refresh() -> bool:
     return os.environ.get("GIT_BRANCHES_REFRESH", "") in ("1", "true", "yes")
 
 
-def _checks_enabled() -> bool:
+def checks_enabled() -> bool:
     """Return True if checks fetching is enabled.
 
     Default is disabled; set GIT_BRANCHES_SHOW_CHECKS=1/true/yes to enable network fetches.
@@ -92,7 +93,7 @@ def peek_actions_status_for_sha(sha: str) -> dict:
     Loads disk cache once per process if available and not disabled.
     """
     global _actions_disk_loaded
-    if not sha or _no_cache() or _refresh() or _offline() or not _checks_enabled():
+    if not sha or _no_cache() or _refresh() or _offline() or not checks_enabled():
         return {}
     if sha in _actions_cache:
         return _actions_cache[sha]
@@ -119,7 +120,7 @@ def prefetch_actions_for_shas(
 
     Intended to warm the cache for list rendering when --checks and --prefetch-details are on.
     """
-    if not _checks_enabled() or _offline() or not shas:
+    if not checks_enabled() or _offline() or not shas:
         return
     to_fetch = []
     seen = set()
@@ -251,7 +252,7 @@ def _run_cmd(cmd: list) -> str:
         return ""
 
 
-def _get_current_github_user() -> str:
+def get_current_github_user() -> str:
     """Get the current GitHub user login, cached per session."""
     global _current_user_cache
     if _current_user_cache:
@@ -266,7 +267,7 @@ def _get_current_github_user() -> str:
     try:
         headers = {"Accept": "application/vnd.github+json", "Authorization": f"Bearer {tok}"}
         query = "query { viewer { login } }"
-        r = _requests_post("https://api.github.com/graphql", headers=headers, json={"query": query})
+        r = _requests_post("https://api.github.com/graphql", headers=headers, jeez={"query": query})
         if r.ok:
             data = r.json()
             login = data.get("data", {}).get("viewer", {}).get("login", "")
@@ -285,11 +286,11 @@ def _requests_get(url: str, headers: dict[str, str], timeout: float = 3.0):  # p
 
 
 def _requests_post(
-    url: str, headers: dict[str, str], json: dict, timeout: float = 3.0
+    url: str, headers: dict[str, str], jeez: dict, timeout: float = 3.0
 ):  # pragma: no cover
     if requests is None:
         raise RuntimeError("requests not available")
-    return requests.post(url, headers=headers, json=json, timeout=timeout)
+    return requests.post(url, headers=headers, json=jeez, timeout=timeout)
 
 
 def get_branch_pushed_status(base: tuple[str, str] | None, branch: str) -> str:
@@ -317,9 +318,9 @@ def get_branch_pushed_status(base: tuple[str, str] | None, branch: str) -> str:
 
 
 def get_pr_status_from_cache(branch: str, colors: Colors) -> str:
-    if branch not in _pr_cache:
+    if branch not in pr_cache:
         return ""
-    pr = _pr_cache[branch]
+    pr = pr_cache[branch]
     state = pr.get("state", "open").lower()
     draft = bool(pr.get("isDraft", False))
 
@@ -333,7 +334,7 @@ def get_pr_status_from_cache(branch: str, colors: Colors) -> str:
     return f"{colors.green}{colors.reset}"
 
 
-def _fetch_prs_and_populate_cache(states: list[str] | None = None) -> None:
+def fetch_prs_and_populate_cache(states: list[str] | None = None) -> None:
     """Populate in-memory PR cache using a single GraphQL query.
 
     Builds a mapping keyed by branch name (head.ref) with minimal PR fields for
@@ -341,15 +342,15 @@ def _fetch_prs_and_populate_cache(states: list[str] | None = None) -> None:
     """
     if states is None:
         states = DEFAULT_PR_STATES
-    global _pr_cache
-    if _pr_cache:
+    global pr_cache
+    if pr_cache:
         return
     if _offline():
         return
 
     # Reset in-memory caches if caller asked to refresh or disable cache
     if _refresh() or _no_cache():
-        _pr_cache.clear()
+        pr_cache.clear()
         _pr_details_cache.clear()
         _actions_cache.clear()
 
@@ -362,7 +363,7 @@ def _fetch_prs_and_populate_cache(states: list[str] | None = None) -> None:
             if time.time() - disk_data.get("timestamp", 0) < CACHE_DURATION_SECONDS:
                 prs = disk_data.get("prs", {})
                 if isinstance(prs, dict) and prs:
-                    _pr_cache = prs
+                    pr_cache = prs
                     return
         except Exception:
             disk_data = None
@@ -413,7 +414,7 @@ def _fetch_prs_and_populate_cache(states: list[str] | None = None) -> None:
         if _progress_enabled() and sys.stderr.isatty():
             sp = Spinner("Fetching PRs from GitHub...")
             sp.start()
-        r = _requests_post(url, headers=gh_headers, json={"query": query, "variables": variables})
+        r = _requests_post(url, headers=gh_headers, jeez={"query": query, "variables": variables})
         if sp:
             sp.stop()
         if not r.ok:
@@ -421,21 +422,21 @@ def _fetch_prs_and_populate_cache(states: list[str] | None = None) -> None:
         data = r.json()
         repo_data = data.get("data", {}).get("repository", {})
         nodes = repo_data.get("pullRequests", {}).get("nodes", [])
-        _pr_cache = {pr["headRefName"]: pr for pr in nodes if pr.get("headRefName")}
+        pr_cache = {pr["headRefName"]: pr for pr in nodes if pr.get("headRefName")}
         if not _no_cache():
             os.makedirs(CACHE_DIR, exist_ok=True)
             with open(CACHE_FILE, "w", encoding="utf-8") as f:
-                json.dump({"timestamp": time.time(), "prs": _pr_cache}, f)
+                json.dump({"timestamp": time.time(), "prs": pr_cache}, f)
     except Exception:
         pass
 
 
 def get_cached_pull_requests() -> list[tuple[str, dict]]:
     """Return cached pull requests keyed by branch name."""
-    _fetch_prs_and_populate_cache()
-    if not _pr_cache:
+    fetch_prs_and_populate_cache()
+    if not pr_cache:
         return []
-    return list(_pr_cache.items())
+    return list(pr_cache.items())
 
 
 def _find_pr_for_ref(
@@ -443,7 +444,7 @@ def _find_pr_for_ref(
 ) -> tuple[str, str, str, str, bool, str, tuple[str, str] | None, list, list, dict, str]:
     if _offline():
         return "", "", "", "", False, "", None, [], [], {}, ""
-    _fetch_prs_and_populate_cache()
+    fetch_prs_and_populate_cache()
 
     # Normalize to branch without remote prefix to use as key
     branch_name = ref
@@ -508,7 +509,7 @@ def _find_pr_for_ref(
         except Exception:
             pass
 
-    pr = _pr_cache.get(branch_name)
+    pr = pr_cache.get(branch_name)
     if pr:
         num = str(pr.get("number", ""))
         title = pr.get("title", "")
@@ -576,7 +577,7 @@ def _find_pr_for_ref(
     url = "https://api.github.com/graphql"
 
     try:
-        r = _requests_post(url, headers=headers, json={"query": query, "variables": variables})
+        r = _requests_post(url, headers=headers, jeez={"query": query, "variables": variables})
         if not r.ok:
             return "", "", "", "", False, "", None, [], [], {}, ""
         data = r.json()
@@ -858,10 +859,10 @@ def _build_pr_section(ref: str, colors: Colors, cols: int) -> str:
         lines.append(details)
 
     actions = peek_actions_status_for_sha(pr_sha)
-    if not actions and _checks_enabled():
+    if not actions and checks_enabled():
         actions = get_actions_status_for_sha(pr_base, pr_sha)
     if actions:
-        icon, label = _actions_status_icon(actions.get("conclusion"), actions.get("status"), colors)
+        icon, label = actions_status_icon(actions.get("conclusion"), actions.get("status"), colors)
         run_url = actions.get("html_url") or ""
         if run_url:
             link = f"\x1b]8;;{run_url}\x1b\\{actions.get('name', '') or 'Workflow'}\x1b]8;;\x1b\\"
@@ -1022,7 +1023,7 @@ def open_url_for_ref(ref: str) -> int:
         return 1
 
 
-def _actions_status_icon(
+def actions_status_icon(
     conclusion: str | None, status: str | None, colors: Colors
 ) -> tuple[str, str]:
     s = (status or "").lower()
@@ -1045,7 +1046,7 @@ def get_actions_status_for_sha(base: tuple[str, str] | None, sha: str) -> dict:
 
     Respects offline/no-cache/refresh. Uses a short-lived disk cache per sha.
     """
-    if not _checks_enabled() or _offline() or not sha:
+    if not checks_enabled() or _offline() or not sha:
         return {}
     if not base:
         base = detect_base_repo()
@@ -1170,7 +1171,7 @@ def prefetch_pr_details(branches: list[str], chunk_size: int = 20) -> None:
             r = _requests_post(
                 "https://api.github.com/graphql",
                 headers=headers,
-                json={"query": query, "variables": variables},
+                jeez={"query": query, "variables": variables},
             )
             if not getattr(r, "ok", False):
                 continue
