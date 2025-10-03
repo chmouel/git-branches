@@ -183,7 +183,6 @@ def format_branch_info(
     status: str = "",
     pr_info: tuple[str, str] | None = None,
     is_own_pr: bool = False,
-    is_worktree: bool = False,
 ) -> str:
     cached = get_last_commit_from_cache(full_ref)
     if cached:

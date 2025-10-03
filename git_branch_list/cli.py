@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import subprocess
 import sys
 import unicodedata
 from pathlib import Path
@@ -51,8 +52,7 @@ def _derive_pr_branch_name(pr_number: int, title: str) -> str:
 
 
 def _worktree_base_dir() -> Path:
-    env = os.environ.get("GIT_BRANCHES_WORKTREE_BASEDIR") or os.environ.get("PM_BASEDIR")
-    if env:
+    if env := os.environ.get("GIT_BRANCHES_WORKTREE_BASEDIR") or os.environ.get("PM_BASEDIR"):
         base = Path(os.path.expanduser(env))
     else:
         try:
@@ -62,8 +62,8 @@ def _worktree_base_dir() -> Path:
                 base = repo_path.parent
             else:
                 base = Path.cwd() / ".git-branches-worktrees"
-        except Exception:
-            base = Path.cwd() / ".git-branches-worktrees"
+        except subprocess.CalledProcessError:
+            base = Path.home() / "git" / "worktrees"
     base.mkdir(parents=True, exist_ok=True)
     return base
 
@@ -290,6 +290,10 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         dest="delete_local",
         help="Delete local branches (interactive multi-select)",
+    )
+    p.add_argument(
+        "--directory",
+        help="Directory to run in (default: current directory)",
     )
     p.add_argument(
         "-D",
@@ -547,7 +551,6 @@ def _build_rows_local(
             status=status,
             pr_info=pr_info,
             is_own_pr=is_own_pr,
-            is_worktree=is_worktree_branch,
         )
         rows.append((row, b))
     return rows
@@ -939,6 +942,9 @@ def main(argv: list[str] | None = None) -> int:
             os.environ["GIT_BRANCHES_NO_PROGRESS"] = "1"
             os.environ["GIT_BRANCHES_NO_CACHE"] = "1"
             os.environ["GIT_BRANCHES_PREFETCH_DETAILS"] = "0"
+
+        if args.directory:
+            os.chdir(args.directory)
 
         # Flags removed; env vars can still be set by the user
         if args.refresh:
