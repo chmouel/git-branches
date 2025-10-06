@@ -7,41 +7,13 @@ import sys
 from datetime import datetime
 from typing import Any
 
-from .git_ops import run
+from .commands import run
 from .render import Colors
 
 
 def _make_clickable(text: str, url: str) -> str:
     """Make text clickable using OSC 8 escape sequences."""
     return f"\033]8;;{url}\033\\{text}\033]8;;\033\\"
-
-
-def _make_urls_clickable(text: str) -> str:
-    """Make URLs in text clickable using OSC 8 escape sequences."""
-    import re
-
-    # Pattern for URLs (http, https)
-    url_pattern = r'(https?://[^\s\]]+)'
-
-    def replace_url(match):
-        url = match.group(1)
-        return _make_clickable(url, url)
-
-    # Replace standalone URLs
-    text = re.sub(url_pattern, replace_url, text)
-
-    # Pattern for markdown links [text](url)
-    markdown_pattern = r'\[([^\]]+)\]\((https?://[^\)]+)\)'
-
-    def replace_markdown_link(match):
-        link_text = match.group(1)
-        url = match.group(2)
-        return _make_clickable(link_text, url)
-
-    # Replace markdown links
-    text = re.sub(markdown_pattern, replace_markdown_link, text)
-
-    return text
 
 
 def _make_jira_ticket_clickable(ticket: str, base_url: str | None = None) -> str:
@@ -57,19 +29,22 @@ def _make_branch_clickable(branch_name: str, cwd: str | None = None) -> str:
     try:
         # Get GitHub repo URL
         remote_url = _run_cmd(["git", "remote", "get-url", "origin"], cwd=cwd, check=False)
-        if "github.com" in remote_url:
-            # Convert SSH or HTTPS URL to proper GitHub URL
-            if remote_url.startswith("git@github.com:"):
-                repo_path = remote_url.replace("git@github.com:", "").replace(".git", "")
-                repo_url = f"https://github.com/{repo_path}"
-            elif remote_url.startswith("https://github.com/"):
-                repo_url = remote_url.replace(".git", "")
+        if "github.com" not in remote_url:
+            return branch_name
+        # Convert SSH or HTTPS URL to proper GitHub URL
+        if remote_url.startswith("git@github.com:"):
+            repo_path = remote_url.replace("git@github.com:", "").replace(".git", "")
+        elif remote_url.startswith("https://github.com/"):
+            repo_path = remote_url.replace("https://github.com/", "").replace(".git", "")
+        else:
+            return branch_name
 
-            if repo_url:
-                # Clean branch name for URL (remove remote prefix if present)
-                clean_branch = branch_name.split('/')[-1] if '/' in branch_name else branch_name
-                branch_url = f"{repo_url}/tree/{clean_branch}"
-                return _make_clickable(branch_name, branch_url)
+        repo_url = f"https://github.com/{repo_path}"
+
+        # Clean branch name for URL (remove remote prefix if present)
+        clean_branch = branch_name.split('/')[-1] if '/' in branch_name else branch_name
+        branch_url = f"{repo_url}/tree/{clean_branch}"
+        return _make_clickable(branch_name, branch_url)
     except Exception:
         pass
 

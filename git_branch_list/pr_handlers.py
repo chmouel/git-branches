@@ -13,22 +13,17 @@ in the git-branches CLI tool, including:
 """
 
 import os
+import pathlib
 import sys
 
-from . import github, worktrees
-from .fzf_ui import confirm, fzf_select
-from .git_ops import is_branch_in_worktree, run, which
+from git_branch_list import commands
+
+from . import fzf_ui, git_ops, github, utils, worktrees
+from .commands import run
 from .render import Colors, setup_colors, truncate_display
-from .utils import (
-    _has_local_branch,
-    _local_branch_icon,
-    _worktree_base_dir,
-    _worktree_icon,
-    write_path_file,
-)
 
 
-def _checkout_pr_branch(pr_data: dict, remote: str) -> int:
+def _checkout_pr_branch(colors: Colors, pr_data: dict, remote: str) -> int:
     _ = remote
     pr_number = pr_data.get("number")
     if pr_number is None:
@@ -42,13 +37,16 @@ def _checkout_pr_branch(pr_data: dict, remote: str) -> int:
             file=sys.stderr,
         )
         return 1
-    if not which("gh"):
+    if not commands.which("gh"):
         print("Error: GitHub CLI (gh) is required for PR checkout.", file=sys.stderr)
         return 1
-    if not confirm(f"Checkout PR #{pr_number} to branch '{branch_name}'?"):
+    cwd = pathlib.Path(*pathlib.Path(os.getcwd()).parts[-2:])
+    if not fzf_ui.confirm(
+        f"Checkout PR {colors.yellow}#{pr_number}{colors.reset} to branch '{colors.cyan}{branch_name}{colors.reset}' in current directory '{colors.magenta}.../{cwd}{colors.reset}'?"
+    ):
         return 1
     try:
-        run(
+        utils.run(
             [
                 "gh",
                 "pr",
@@ -67,30 +65,31 @@ def _checkout_pr_branch(pr_data: dict, remote: str) -> int:
         return 1
 
 
-def _create_worktree_from_pr(pr_data: dict) -> int:
+def _create_worktree_from_pr(colors: Colors, pr_data: dict) -> int:
     branch_name = pr_data["headRefName"]
-    base = _worktree_base_dir()
+    base = utils.worktree_base_dir()
     worktree_path = base / branch_name
     if worktree_path.exists():
-        write_path_file(worktree_path)
+        utils.write_path_file(worktree_path)
         return 0
     # ask if we want to add the worktrees and checkout pr
-    question = f"Create worktree at {worktree_path} and checkout PR #{pr_data.get('number')}?"
-    if not confirm(question):
+    dir = pathlib.Path(*pathlib.Path(worktree_path).parts[-3:])
+    question = f"Create worktree at {colors.green}.../{dir}{colors.reset} and checkout PR {colors.yellow}#{pr_data.get('number')}{colors.reset} ?"
+    if not fzf_ui.confirm(question):
         return 1
     try:
-        run(["git", "worktree", "add", str(worktree_path)], check=True)
+        utils.run(["git", "worktree", "add", str(worktree_path)], check=True)
         worktrees.save_last_worktree(str(worktree_path))
     except Exception as exc:
         print(f"Error: git worktree add failed: {exc}", file=sys.stderr)
         return 1
 
-    if not which("gh"):
+    if not commands.which("gh"):
         print("Error: GitHub CLI (gh) is required for PR checkout.", file=sys.stderr)
         return 1
     pr_number = pr_data.get("number")
     try:
-        run(
+        utils.run(
             [
                 "gh",
                 "pr",
@@ -106,7 +105,7 @@ def _create_worktree_from_pr(pr_data: dict) -> int:
     except Exception as exc:
         print(f"Error: gh pr checkout failed: {exc}", file=sys.stderr)
         return 1
-    write_path_file(worktree_path)
+    utils.write_path_file(worktree_path)
     return 0
 
 
@@ -130,11 +129,11 @@ def _build_pr_rows(
 
         pr_data["_has_local"] = False
         pr_data["_worktree_dir"] = ""
-        if _has_local_branch(branch_name):
-            markers.append(_local_branch_icon(colors))
+        if utils.has_local_branch(branch_name):
+            markers.append(utils.local_branch_icon(colors))
             pr_data["_has_local"] = True
-        if current_worktree := is_branch_in_worktree(branch_name):
-            markers.append(_worktree_icon(colors))
+        if current_worktree := git_ops.is_branch_in_worktree(branch_name):
+            markers.append(utils.worktree_icon(colors))
             pr_data["_worktree_dir"] = current_worktree
         status_icon = github.get_pr_status_from_cache(branch_name, colors)
         title = truncate_display(pr_data.get("title") or "(no title)", title_width)
@@ -173,7 +172,7 @@ def browse_pull_requests(args) -> int:
         return 1
 
     header = "Pull requests (Enter=checkout, Alt-w=create worktree)"
-    result = fzf_select(
+    result = fzf_ui.fzf_select(
         rows,
         header=header,
         preview_cmd=None,
@@ -196,16 +195,14 @@ def browse_pull_requests(args) -> int:
 
     key = (key_pressed or "enter").strip()
     if pr_data.get("_worktree_dir") and pr_data["_worktree_dir"] != "":
-        write_path_file(pr_data["_worktree_dir"])
+        utils.write_path_file(pr_data["_worktree_dir"])
         return 0
     if key == "alt-w":
-        return _create_worktree_from_pr(pr_data)
-    return _checkout_pr_branch(pr_data, remote_name)
+        return _create_worktree_from_pr(colors, pr_data)
+    return _checkout_pr_branch(colors, pr_data, remote_name)
 
 
 def _is_workdir_dirty() -> bool:
-    from .git_ops import run
-
     try:
         cp = run(["git", "status", "--porcelain"], check=True)
         return bool(cp.stdout.strip())

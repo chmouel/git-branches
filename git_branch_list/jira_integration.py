@@ -4,7 +4,7 @@ import os
 import re
 from dataclasses import dataclass
 
-from .render import Colors
+from . import render
 
 try:  # runtime-only via uv
     import requests  # type: ignore
@@ -126,7 +126,7 @@ def get_jira_tickets_for_branch(branch_name: str) -> list[JiraTicket]:
     return tickets
 
 
-def format_jira_section(tickets: list[JiraTicket], colors: Colors) -> str:
+def format_jira_section(tickets: list[JiraTicket], colors: render.Colors) -> str:
     """Format JIRA tickets for preview display."""
     if not tickets:
         return ""
@@ -215,7 +215,7 @@ def format_jira_section(tickets: list[JiraTicket], colors: Colors) -> str:
     return "\n".join(lines)
 
 
-def _get_status_color(status: str, colors: Colors) -> str:
+def _get_status_color(status: str, colors: render.Colors) -> str:
     """Get color for JIRA status."""
     status_lower = status.lower()
     if "open" in status_lower or "to do" in status_lower or "qa" in status_lower:
@@ -228,7 +228,7 @@ def _get_status_color(status: str, colors: Colors) -> str:
         return colors.grey
 
 
-def _get_priority_color(priority: str, colors: Colors) -> str:
+def _get_priority_color(priority: str, colors: render.Colors) -> str:
     """Get color for JIRA priority."""
     priority_lower = priority.lower()
     if "critical" in priority_lower or "blocker" in priority_lower:

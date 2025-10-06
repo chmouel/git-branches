@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from .git_ops import run, term_cols
+from git_branch_list import commands
+
+from .git_ops import term_cols
 from .render import Colors, highlight_subject, truncate_display
 
 
@@ -54,7 +56,7 @@ def _env_basedir() -> tuple[Path | None, str | None]:
 
 def _is_git_repo(path: str) -> bool:
     try:
-        cp = run(["git", "rev-parse", "--is-inside-work-tree"], cwd=path, check=False)
+        cp = commands.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=path, check=False)
     except Exception:
         return False
     return cp.returncode == 0 and cp.stdout.strip().lower() == "true"
@@ -62,7 +64,7 @@ def _is_git_repo(path: str) -> bool:
 
 def _current_branch(path: str) -> str | None:
     try:
-        cp = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=path, check=False)
+        cp = commands.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=path, check=False)
     except Exception:
         return None
     if cp.returncode != 0:
@@ -73,33 +75,18 @@ def _current_branch(path: str) -> str | None:
     return branch
 
 
-def _collect_status_counts(path: str) -> tuple[bool, int, int, int]:
+def _is_dirty(path: str) -> bool:
+    """Check if a git repository has any uncommitted changes."""
     try:
-        cp = run(["git", "status", "--porcelain"], cwd=path, check=False)
+        cp = commands.run(["git", "status", "--porcelain"], cwd=path, check=False)
     except Exception:
-        return False, 0, 0, 0
-    staged = unstaged = untracked = 0
-    for line in cp.stdout.splitlines():
-        if not line:
-            continue
-        x = line[0]
-        y = line[1] if len(line) > 1 else ""
-        if x not in (" ", "?"):
-            staged += 1
-        if y and y != " ":
-            if y == "?":
-                untracked += 1
-            else:
-                unstaged += 1
-        elif x == "?":
-            untracked += 1
-    dirty = staged > 0 or unstaged > 0 or untracked > 0
-    return dirty, staged, unstaged, untracked
+        return False
+    return bool(cp.stdout.strip())
 
 
 def _collect_tracking(path: str) -> tuple[str | None, int, int]:
     try:
-        cp = run(
+        cp = commands.run(
             ["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
             cwd=path,
             check=False,
@@ -112,10 +99,10 @@ def _collect_tracking(path: str) -> tuple[str | None, int, int]:
     ahead = behind = 0
     if tracking:
         try:
-            ahead_cp = run(
+            ahead_cp = commands.run(
                 ["git", "rev-list", "--count", f"{tracking}..HEAD"], cwd=path, check=False
             )
-            behind_cp = run(
+            behind_cp = commands.run(
                 ["git", "rev-list", "--count", f"HEAD..{tracking}"], cwd=path, check=False
             )
             ahead = int(ahead_cp.stdout.strip() or "0")
@@ -127,7 +114,7 @@ def _collect_tracking(path: str) -> tuple[str | None, int, int]:
 
 def _collect_commit_info(path: str) -> tuple[int, str, str]:
     try:
-        cp = run(["git", "log", "-1", "--format=%ct|%h|%s", "HEAD"], cwd=path, check=False)
+        cp = commands.run(["git", "log", "-1", "--format=%ct|%h|%s", "HEAD"], cwd=path, check=False)
     except Exception:
         return 0, "", ""
     line = cp.stdout.strip().split("\n", 1)[0] if cp.stdout.strip() else ""
@@ -167,7 +154,7 @@ def _collect_from_basedir(basedir: Path, default_main: str | None) -> list[Workt
             continue
         branch = _current_branch(path)
         epoch, short, subject = _collect_commit_info(path)
-        dirty, _, _, _ = _collect_status_counts(path)
+        dirty = _is_dirty(path)
         if dirty and epoch < now:
             epoch = now
         tracking, ahead, behind = _collect_tracking(path)
@@ -197,7 +184,7 @@ def _collect_from_basedir(basedir: Path, default_main: str | None) -> list[Workt
 
 def _read_worktree_list() -> list[dict[str, str]]:
     try:
-        cp = run(["git", "worktree", "list", "--porcelain"], check=True)
+        cp = commands.run(["git", "worktree", "list", "--porcelain"], check=True)
     except Exception:
         return []
 
@@ -234,7 +221,7 @@ def _collect_git_worktrees() -> list[WorktreeInfo]:
         return []
     try:
         root = os.path.abspath(
-            run(["git", "rev-parse", "--show-toplevel"], check=False).stdout.strip()
+            commands.run(["git", "rev-parse", "--show-toplevel"], check=False).stdout.strip()
         )
     except Exception:
         root = ""
@@ -246,7 +233,7 @@ def _collect_git_worktrees() -> list[WorktreeInfo]:
             continue
         branch = block.get("branch")
         epoch, short, subject = _collect_commit_info(path)
-        dirty, _, _, _ = _collect_status_counts(path)
+        dirty = _is_dirty(path)
         tracking, ahead, behind = _collect_tracking(path)
         if not short:
             head = block.get("head", "")

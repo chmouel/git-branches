@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import subprocess
 
-from .git_ops import run
+from .commands import run
 
 
 def fzf_select(

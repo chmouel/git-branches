@@ -136,13 +136,6 @@ def test_detect_base_remote_fallback(monkeypatch):
     assert github.detect_base_remote() == ("custom", "o", "r")
 
 
-def test_get_cached_pull_requests(monkeypatch):
-    _reset_github_caches()
-    monkeypatch.setattr(github, "_fetch_prs_and_populate_cache", lambda: None)
-    github.pr_cache.update({"branch": {"number": 7}})  # noqa: SLF001
-    assert github.get_cached_pull_requests() == [("branch", {"number": 7})]
-
-
 def test_find_pr_for_ref_uses_details_cache(monkeypatch):
     _reset_github_caches()
     monkeypatch.delenv("GIT_BRANCHES_OFFLINE", raising=False)
@@ -174,51 +167,6 @@ def test_find_pr_for_ref_uses_details_cache(monkeypatch):
     assert reqs == ["u1"]
     assert reviews == {"u2": "APPROVED"}
     assert body == "Hello"
-
-
-def test_prefetch_pr_details_populates_cache(monkeypatch):
-    _reset_github_caches()
-    monkeypatch.delenv("GIT_BRANCHES_OFFLINE", raising=False)
-    monkeypatch.setenv("GIT_BRANCHES_NO_PROGRESS", "1")
-    monkeypatch.setattr(github, "detect_base_repo", lambda: ("o", "r"))
-    monkeypatch.setattr(github, "_github_token", lambda: "tok")
-    # Remotes to strip prefixes
-    monkeypatch.setattr(github, "run", lambda cmd: types.SimpleNamespace(stdout="origin\n"))
-
-    class R:
-        ok = True
-
-        def json(self):
-            # Return nodes for each alias r0/r1
-            return {
-                "data": {
-                    "repository": {
-                        "r0": {
-                            "nodes": [
-                                {
-                                    "number": 1,
-                                    "headRefName": "branch1",
-                                    "author": {"login": "user1"},
-                                }
-                            ]
-                        },
-                        "r1": {
-                            "nodes": [
-                                {
-                                    "number": 2,
-                                    "headRefName": "branch2",
-                                    "author": {"login": "user2"},
-                                }
-                            ]
-                        },
-                    }
-                }
-            }
-
-    monkeypatch.setattr(github, "_requests_post", lambda url, headers, json, timeout=3.0: R())
-    github.prefetch_pr_details(["origin/branch1", "branch2"], chunk_size=2)
-    assert "branch1" in github._pr_details_cache  # noqa: SLF001
-    assert "branch2" in github._pr_details_cache  # noqa: SLF001
 
 
 def test_open_url_for_ref(monkeypatch):

@@ -3,43 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from .git_ops import get_last_commit_from_cache, run
+from git_branch_list import github
+
+from .commands import run
+from .git_ops import get_last_commit_from_cache
 
 
 def _osc8(url: str, text: str) -> str:
     return f"\x1b]8;;{url}\x1b\\{text}\x1b]8;;\x1b\\"
-
-
-def _detect_github_owner_repo() -> tuple[str, str] | None:
-    """Best-effort detect GitHub owner/repo from remotes.
-
-    Avoids importing github module to prevent cycles. Returns None on failure.
-    """
-    try:
-        cp = run(["git", "remote"])
-        remotes = [r.strip() for r in cp.stdout.splitlines() if r.strip()]
-    except Exception:
-        remotes = []
-    for cand in ("upstream", "origin"):
-        if cand in remotes:
-            try:
-                url = run(["git", "remote", "get-url", cand]).stdout.strip()
-            except Exception:
-                continue
-            owner_repo = ""
-            if url.startswith("git@github.com:"):
-                owner_repo = url.removeprefix("git@github.com:")
-            elif url.startswith("https://github.com/"):
-                owner_repo = url.removeprefix("https://github.com/")
-            elif url.startswith("ssh://git@github.com/"):
-                owner_repo = url.removeprefix("ssh://git@github.com/")
-            else:
-                continue
-            owner_repo = owner_repo.removesuffix(".git")
-            if "/" in owner_repo:
-                owner, repo = owner_repo.split("/", 1)
-                return owner, repo
-    return None
 
 
 @dataclass
@@ -142,7 +113,7 @@ def highlight_subject(subject: str, colors: Colors) -> str:
         "revert": colors.revert,
     }
     for keyword, color in replacements.items():
-        if subject.startswith(keyword + ":") or subject.startswith(keyword + "("):
+        if color and (subject.startswith(keyword + ":") or subject.startswith(keyword + "(")):
             parts = subject.split(":", 1)
             if len(parts) > 1:
                 return f"{color}{parts[0]}{colors.reset}:{parts[1]}"
@@ -257,7 +228,7 @@ def format_branch_info(
 
     # Make commit hash clickable if we can detect GitHub base and colors enabled
     link_hash = commit_hash_short
-    base = None if not colors.reset else _detect_github_owner_repo()
+    base = None if not colors.reset else github.detect_github_owner_repo()
     if base and commit_hash_full and colors.reset:
         owner, repo = base
         url = f"https://github.com/{owner}/{repo}/commit/{commit_hash_full}"
@@ -308,36 +279,3 @@ def format_pr_details(
         details.append("  ".join(review_parts))
 
     return "  ".join(details)
-
-
-def git_log_oneline(
-    ref: str, n: int = 10, colors: Colors | None = None, cwd: str | None = None
-) -> str:
-    try:
-        if not colors:
-            # Preserve original behavior when caller wants raw colored output
-            cp_color = run(
-                ["git", "log", "--oneline", f"-{n}", "--color=always", ref],
-                cwd=cwd,
-            )
-            return cp_color.stdout
-        # Use full and short SHAs to build clickable links
-        cp = run(["git", "log", f"-{n}", "--format=%H %h %s", ref], cwd=cwd)
-        base = None if not colors.reset else _detect_github_owner_repo()
-        output: list[str] = []
-        for line in cp.stdout.splitlines():
-            parts = line.split(" ", 2)
-            if len(parts) == 3:
-                full, short, subject = parts
-                sha_text = f"{colors.commit}{short}{colors.reset}"
-                if base and colors.reset:
-                    owner, repo = base
-                    url = f"https://github.com/{owner}/{repo}/commit/{full}"
-                    sha_text = _osc8(url, sha_text)
-                highlighted_subject = highlight_subject(subject, colors)
-                output.append(f"{sha_text} {highlighted_subject}")
-            else:
-                output.append(line)
-        return "\n".join(output)
-    except Exception:
-        return ""

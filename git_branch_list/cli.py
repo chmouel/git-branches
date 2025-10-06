@@ -22,22 +22,21 @@ from other modules that were previously defined here.
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
 from types import SimpleNamespace
 
 import click
-from click.shell_completion import CompletionItem
+
+from git_branch_list import utils
 
 from . import github
-from .branch_builders import _build_rows_local, _build_rows_remote
-from .git_ops import ensure_git_repo, run
+from .branch_builders import build_rows_local, build_rows_remote
+from .commands import run
+from .git_ops import ensure_git_repo
 from .interactive import delete_branch_or_worktree, interactive
 from .pr_handlers import browse_pull_requests
 from .render import setup_colors
 from .status_preview import print_current_status_preview
-
-# Re-export functions for backward compatibility with tests
 
 
 def _run_with_args(args: SimpleNamespace) -> int:
@@ -101,7 +100,7 @@ def _run_with_args(args: SimpleNamespace) -> int:
                 if args.show_status and not args.show_status_all and not limit:
                     limit = default_limit_branch_status
                 if args.emit_local_rows:
-                    rows = _build_rows_local(
+                    rows = build_rows_local(
                         args.show_status,
                         limit,
                         colors,
@@ -113,7 +112,7 @@ def _run_with_args(args: SimpleNamespace) -> int:
                     )
                 else:
                     assert args.emit_remote_rows is not None
-                    rows = _build_rows_remote(
+                    rows = build_rows_remote(
                         args.emit_remote_rows,
                         limit,
                         colors,
@@ -139,20 +138,6 @@ def _run_with_args(args: SimpleNamespace) -> int:
         return 130
 
 
-# Click-based CLI
-def _complete_git_remotes(ctx, param, incomplete):
-    try:
-        out = subprocess.run(["git", "remote"], check=True, capture_output=True, text=True).stdout
-        remotes = [r.strip() for r in out.splitlines() if r.strip()]
-    except Exception:
-        remotes = []
-    items = []
-    for r in remotes:
-        if not incomplete or r.startswith(incomplete):
-            items.append(CompletionItem(r))
-    return items
-
-
 @click.group(invoke_without_command=True)
 @click.option(
     "-r", "remote_mode", is_flag=True, help="Browse remote branches (interactive remote selection)"
@@ -162,7 +147,7 @@ def _complete_git_remotes(ctx, param, incomplete):
     "remote_name",
     metavar="REMOTE",
     help="Browse specific remote branches",
-    shell_complete=_complete_git_remotes,
+    shell_complete=utils.complete_git_remotes,
 )
 @click.option(
     "-d", "delete_local", is_flag=True, help="Delete local branches (interactive multi-select)"
@@ -260,7 +245,7 @@ def _complete_git_remotes(ctx, param, incomplete):
     default=None,
     help=None,
     hidden=True,
-    shell_complete=_complete_git_remotes,
+    shell_complete=utils.complete_git_remotes,
 )
 @click.option(
     "--status",
@@ -268,6 +253,9 @@ def _complete_git_remotes(ctx, param, incomplete):
     is_flag=True,
     default=False,
     help="Show current git status and preview",
+)
+@click.option(
+    "-h", "--help", "show_help", is_flag=True, is_eager=True, help="Show this message and exit"
 )
 @click.pass_context
 def cli(ctx: click.Context, **kwargs):
@@ -290,45 +278,8 @@ def main(argv: list[str] | None = None) -> int:
         return cli.main(
             args=argv or None, prog_name=os.path.basename(sys.argv[0]), standalone_mode=False
         )  # type: ignore[return-value]
+    except click.ClickException as exc:
+        print(exc.format_message(), file=sys.stderr)
+        return exc.exit_code
     except SystemExit as exc:  # Fallback if click emitted a SystemExit
         return int(exc.code or 0)
-
-
-@cli.command(name="completion", help="Generate shell completion script")
-@click.option(
-    "--shell",
-    "shell_",
-    type=click.Choice(["bash", "zsh", "fish", "pwsh"], case_sensitive=False),
-    help="Target shell (auto-detect if omitted)",
-)
-def completion(shell_: str | None):
-    prog = os.path.basename(sys.argv[0]) or "git-branches"
-    # auto-detect shell from env if not provided
-    if not shell_:
-        shpath = os.environ.get("SHELL", "")
-        if "zsh" in shpath:
-            shell_ = "zsh"
-        elif "fish" in shpath:
-            shell_ = "fish"
-        elif "pwsh" in shpath or "powershell" in shpath:
-            shell_ = "pwsh"
-        else:
-            shell_ = "bash"
-
-    suffix = {
-        "bash": "bash_source",
-        "zsh": "zsh_source",
-        "fish": "fish_source",
-        "pwsh": "pwsh_source",
-    }[shell_]
-
-    # Click uses the _PROG_COMPLETE protocol to emit completion scripts
-    env_var = f"_{prog.replace('-', '_').upper()}_COMPLETE"
-    env = os.environ.copy()
-    env[env_var] = suffix
-    try:
-        cp = subprocess.run([prog], env=env, check=True, capture_output=True, text=True)
-        sys.stdout.write(cp.stdout)
-    except Exception as exc:
-        print(f"Error generating completion for {shell_}: {exc}", file=sys.stderr)
-        sys.exit(1)

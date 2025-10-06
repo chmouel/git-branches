@@ -7,10 +7,10 @@ import sys
 import time
 import webbrowser
 
-from .git_ops import run, which
+from . import render
+from .commands import run, which
 from .jira_integration import format_jira_section, get_jira_tickets_for_branch
 from .progress import Spinner
-from .render import Colors, format_pr_details, git_log_oneline, setup_colors, truncate_display
 
 DEFAULT_PR_STATES = ["OPEN"]
 
@@ -46,20 +46,24 @@ CACHE_DURATION_SECONDS = 3000
 _REMOTE_CACHE: set[str] | None = None
 
 
+def _env_bool(var: str, default: bool = False) -> bool:
+    """Check if an environment variable is set to a truthy value."""
+    val = os.environ.get(var, "").strip().lower()
+    if val == "":
+        return default
+    return val in ("1", "true", "yes")
+
+
 def _offline() -> bool:
-    return os.environ.get("GIT_BRANCHES_OFFLINE", "") in ("1", "true", "yes")
-
-
-def _prefetch_enabled() -> bool:
-    return os.environ.get("GIT_BRANCHES_PREFETCH_DETAILS", "") in ("1", "true", "yes")
+    return _env_bool("GIT_BRANCHES_OFFLINE")
 
 
 def _no_cache() -> bool:
-    return os.environ.get("GIT_BRANCHES_NO_CACHE", "") in ("1", "true", "yes")
+    return _env_bool("GIT_BRANCHES_NO_CACHE")
 
 
 def _refresh() -> bool:
-    return os.environ.get("GIT_BRANCHES_REFRESH", "") in ("1", "true", "yes")
+    return _env_bool("GIT_BRANCHES_REFRESH")
 
 
 def checks_enabled() -> bool:
@@ -68,10 +72,7 @@ def checks_enabled() -> bool:
     Default is disabled; set GIT_BRANCHES_SHOW_CHECKS=1/true/yes to enable network fetches.
     Cached results may still be displayed without enabling fetches.
     """
-    val = os.environ.get("GIT_BRANCHES_SHOW_CHECKS", "").strip().lower()
-    if val == "":
-        return False
-    return val in ("1", "true", "yes")
+    return _env_bool("GIT_BRANCHES_SHOW_CHECKS")
 
 
 def _actions_cache_file() -> str:
@@ -79,11 +80,7 @@ def _actions_cache_file() -> str:
 
 
 def _progress_enabled() -> bool:
-    return os.environ.get("GIT_BRANCHES_NO_PROGRESS", "").strip().lower() not in (
-        "1",
-        "true",
-        "yes",
-    )
+    return not _env_bool("GIT_BRANCHES_NO_PROGRESS")
 
 
 def peek_actions_status_for_sha(sha: str) -> dict:
@@ -163,18 +160,6 @@ def detect_github_repo(remote: str) -> tuple[str, str] | None:
         return None
     owner, repo = owner_repo.split("/", 1)
     return owner, repo
-
-
-def _first_remote_name() -> str:
-    try:
-        cp = run(["git", "remote"])
-        for line in cp.stdout.splitlines():
-            s = line.strip()
-            if s:
-                return s
-    except Exception:
-        pass
-    return ""
 
 
 def detect_base_repo() -> tuple[str, str] | None:
@@ -316,7 +301,7 @@ def get_branch_pushed_status(base: tuple[str, str] | None, branch: str) -> str:
     return "\x1b[33m\x1b[0m"
 
 
-def get_pr_status_from_cache(branch: str, colors: Colors) -> str:
+def get_pr_status_from_cache(branch: str, colors: render.Colors) -> str:
     if branch not in pr_cache:
         return ""
     pr = pr_cache[branch]
@@ -674,7 +659,7 @@ def _safe_int(cmd: list[str], cwd: str) -> int:
         return 0
 
 
-def _tracking_line(path: str, colors: Colors) -> str:
+def _tracking_line(path: str, colors: render.Colors) -> str:
     try:
         cp = run(
             ["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
@@ -700,7 +685,7 @@ def _tracking_line(path: str, colors: Colors) -> str:
     return " ".join(parts)
 
 
-def _status_line(path: str, colors: Colors) -> str:
+def _status_line(path: str, colors: render.Colors) -> str:
     try:
         cp = run(["git", "status", "--porcelain"], cwd=path, check=False)
     except Exception:
@@ -743,7 +728,7 @@ def _status_line(path: str, colors: Colors) -> str:
     return " ".join(parts)
 
 
-def _head_decoration_line(path: str, colors: Colors) -> str:
+def _head_decoration_line(path: str, colors: render.Colors) -> str:
     try:
         cp = run(
             ["git", "log", "-1", "--decorate=short", "--pretty=%(decorate)"],
@@ -785,7 +770,7 @@ def _git_diff_output(cmd: list[str], path: str) -> str:
     return _apply_delta_if_available(cp.stdout)
 
 
-def _format_worktree_summary(branch: str, path: str, colors: Colors) -> str:
+def _format_worktree_summary(branch: str, path: str, colors: render.Colors) -> str:
     branch_color = colors.magenta or colors.cyan or ""
     reset = colors.reset or ""
     path_color = colors.cyan or ""
@@ -808,12 +793,12 @@ def _format_worktree_summary(branch: str, path: str, colors: Colors) -> str:
     return "\n".join(lines)
 
 
-def _format_branch_header(ref: str, colors: Colors) -> str:
+def _format_branch_header(ref: str, colors: render.Colors) -> str:
     prefix = f"{colors.bold}{colors.cyan}Branch{colors.reset}" if colors.reset else "Branch"
     return f"{prefix}: {ref}"
 
 
-def _build_pr_section(ref: str, colors: Colors, cols: int) -> str:
+def _build_pr_section(ref: str, colors: render.Colors, cols: int) -> str:
     (
         pr_num,
         pr_sha,
@@ -853,7 +838,7 @@ def _build_pr_section(ref: str, colors: Colors, cols: int) -> str:
         else f"GitHub {pr_status} #{pr_num} {pr_title}"
     )
     lines = [header]
-    details = format_pr_details(labels, review_requests, latest_reviews, colors)
+    details = render.format_pr_details(labels, review_requests, latest_reviews, colors)
     if details:
         lines.append(details)
 
@@ -871,13 +856,13 @@ def _build_pr_section(ref: str, colors: Colors, cols: int) -> str:
 
     if body:
         lines.append("")
-        lines.append(truncate_display(body, cols * 3))
+        lines.append(render.truncate_display(body, cols * 3))
 
     return "\n".join(lines)
 
 
-def _build_log_section(ref: str, colors: Colors, limit: int, cwd: str | None) -> str:
-    log_output = git_log_oneline(ref, n=limit, colors=colors, cwd=cwd)
+def _build_log_section(ref: str, colors: render.Colors, limit: int, cwd: str | None) -> str:
+    log_output = render.git_log_oneline(ref, n=limit, colors=colors, cwd=cwd)
     if not log_output:
         return ""
     header = (
@@ -888,7 +873,7 @@ def _build_log_section(ref: str, colors: Colors, limit: int, cwd: str | None) ->
     return f"{header}\n{log_output.rstrip()}"
 
 
-def _build_diff_section(path: str, colors: Colors) -> str:
+def _build_diff_section(path: str, colors: render.Colors) -> str:
     staged = _git_diff_output(["git", "diff", "--staged", "--color=always"], path)
     unstaged = _git_diff_output(["git", "diff", "--color=always"], path)
     parts: list[str] = []
@@ -901,7 +886,7 @@ def _build_diff_section(path: str, colors: Colors) -> str:
     return "\n\n".join(parts)
 
 
-def _build_jira_section(branch_name: str, colors: Colors) -> str:
+def _build_jira_section(branch_name: str, colors: render.Colors) -> str:
     """Build JIRA tickets section for preview."""
     try:
         tickets = get_jira_tickets_for_branch(branch_name)
@@ -916,7 +901,7 @@ def _compose_preview(
     pr_ref: str,
     branch_name: str | None,
     worktree_path: str | None,
-    colors: Colors,
+    colors: render.Colors,
     cols: int,
     commit_limit: int,
 ) -> str:
@@ -997,7 +982,7 @@ def _branch_for_path(path: str) -> str | None:
 
 
 def preview_worktree(path: str, no_color: bool = False) -> None:
-    colors = setup_colors(no_color=no_color)
+    colors = render.setup_colors(no_color=no_color)
     cols = int(os.environ.get("FZF_PREVIEW_COLUMNS", "80"))
     commit_limit = _preview_commit_count()
     branch = _branch_for_path(path)
@@ -1023,7 +1008,7 @@ def open_url_for_ref(ref: str) -> int:
 
 
 def actions_status_icon(
-    conclusion: str | None, status: str | None, colors: Colors
+    conclusion: str | None, status: str | None, colors: render.Colors
 ) -> tuple[str, str]:
     s = (status or "").lower()
     c = (conclusion or "").lower()
@@ -1185,3 +1170,35 @@ def prefetch_pr_details(branches: list[str], chunk_size: int = 20) -> None:
             continue
     if sp:
         sp.stop()
+
+
+def detect_github_owner_repo() -> tuple[str, str] | None:
+    """Best-effort detect GitHub owner/repo from remotes.
+
+    Avoids importing github module to prevent cycles. Returns None on failure.
+    """
+    try:
+        cp = run(["git", "remote"])
+        remotes = [r.strip() for r in cp.stdout.splitlines() if r.strip()]
+    except Exception:
+        remotes = []
+    for cand in ("upstream", "origin"):
+        if cand in remotes:
+            try:
+                url = run(["git", "remote", "get-url", cand]).stdout.strip()
+            except Exception:
+                continue
+            owner_repo = ""
+            if url.startswith("git@github.com:"):
+                owner_repo = url.removeprefix("git@github.com:")
+            elif url.startswith("https://github.com/"):
+                owner_repo = url.removeprefix("https://github.com/")
+            elif url.startswith("ssh://git@github.com/"):
+                owner_repo = url.removeprefix("ssh://git@github.com/")
+            else:
+                continue
+            owner_repo = owner_repo.removesuffix(".git")
+            if "/" in owner_repo:
+                owner, repo = owner_repo.split("/", 1)
+                return owner, repo
+    return None

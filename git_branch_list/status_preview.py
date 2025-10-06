@@ -3,8 +3,9 @@ from __future__ import annotations
 import os
 from datetime import datetime
 
-from .git_ops import run
-from .render import Colors, highlight_subject, setup_colors
+from .commands import run
+from .github import detect_github_owner_repo
+from .render import Colors, _osc8, highlight_subject, setup_colors
 
 
 def _get_current_branch() -> str | None:
@@ -159,9 +160,7 @@ def _format_commit_line(short: str, full: str, timestamp: int, subject: str, col
 
     # Try to detect GitHub and make commit hash clickable
     try:
-        from .render import _detect_github_owner_repo, _osc8
-
-        base = _detect_github_owner_repo() if colors.reset else None
+        base = detect_github_owner_repo() if colors.reset else None
         if base and full and colors.reset:
             owner, repo = base
             url = f"https://github.com/{owner}/{repo}/commit/{full}"

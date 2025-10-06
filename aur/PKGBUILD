@@ -13,7 +13,7 @@ source=("git-branches::git+https://github.com/chmouel/git-branches.git")
 md5sums=('SKIP')
 
 pkgver() {
-  cd "${srcdir}/git-branches"
+  cd "${srcdir}/git-branches" || exit
   # Prefer tag-based version; ensure non-empty and sanitized
   _desc=$(git describe --tags --long 2>/dev/null || true)
   if [[ -n "${_desc}" ]]; then
@@ -24,20 +24,17 @@ pkgver() {
 }
 
 build() {
-  cd "${srcdir}/git-branches"
+  cd "${srcdir}/git-branches" || exit
   python -m build --wheel --no-isolation
 }
 
 package() {
-  cd "${srcdir}/git-branches"
+  cd "${srcdir}/git-branches" || exit
   python -m installer --destdir="$pkgdir" dist/*.whl
 
   # Shell completions
   install -Dm644 contrib/_git-branches "$pkgdir/usr/share/zsh/site-functions/_git-branches"
   install -Dm644 contrib/git-branches.bash "$pkgdir/usr/share/bash-completion/completions/git-branches"
-  if [[ -f contrib/git-branches.fish ]]; then
-    install -Dm644 contrib/git-branches.fish "$pkgdir/usr/share/fish/vendor_completions.d/git-branches.fish"
-  fi
 
   # Docs
   install -Dm644 README.md "$pkgdir/usr/share/doc/${pkgname}/README.md"

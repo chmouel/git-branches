@@ -18,10 +18,7 @@ classifiers = [
   "Topic :: Software Development :: Version Control :: Git",
   "Topic :: Utilities",
 ]
-dependencies = [
-  "requests>=2.32.4",
-  "click>=8.1.0",
-]
+dependencies = ["requests>=2.32.4", "click>=8.1.0"]
 
 [project.scripts]
 git-branches = "git_branch_list.cli:main"
@@ -57,20 +54,34 @@ packages = ["git_branch_list"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 
+[tool.pyright]
+reportUnknownParameterType = "none"
+reportUnknownMemberType = "none"
+reportUnknownVariableType = "none"
+reportGeneralTypeIssues = "none"
+reportOptionalSubscript = "none"
+reportMissingTypeStubs = false
+reportMissingImports = "none"
+reportAttributeAccessIssue = "none"
+reportOptionalMemberAccess = "none"
+reportArgumentType = "none"
+reportOperatorIssue = "none"
+reportIndexIssue = "none"
+
 [tool.coverage.run]
 source = ["git_branch_list"]
 omit = ["tests/*"]
 
 [tool.coverage.report]
 exclude_lines = [
-    "pragma: no cover",
-    "def __repr__",
-    "if self.debug:",
-    "if settings.DEBUG",
-    "raise AssertionError",
-    "raise NotImplementedError",
-    "if 0:",
-    "if __name__ == .__main__.:",
-    "class .*\\bProtocol\\):",
-    "@(abc\\.)?abstractmethod",
+  "pragma: no cover",
+  "def __repr__",
+  "if self.debug:",
+  "if settings.DEBUG",
+  "raise AssertionError",
+  "raise NotImplementedError",
+  "if 0:",
+  "if __name__ == .__main__.:",
+  "class .*\\bProtocol\\):",
+  "@(abc\\.)?abstractmethod",
 ]

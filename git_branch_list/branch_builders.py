@@ -18,36 +18,27 @@ import os
 import re
 import sys
 
-from . import github
-from .git_ops import (
-    build_last_commit_cache_for_refs,
-    get_current_branch,
-    get_last_commit_from_cache,
-    is_branch_in_worktree,
-    iter_local_branches,
-    iter_remote_branches,
-)
-from .render import Colors, format_branch_info
+from . import git_ops, github, render
 
 
 # pylint: disable=too-many-positional-arguments
-def _build_rows_local(
+def build_rows_local(
     show_status: bool,
     limit: int | None,
-    colors: Colors,
+    colors: render.Colors,
     pr_only: bool = False,
     no_wip: bool = False,
     no_pr: bool = False,
     worktree: bool = False,
     exclude_pattern: str | None = None,
 ) -> list[tuple[str, str]]:
-    current = get_current_branch()
+    current = git_ops.get_current_branch()
     rows: list[tuple[str, str]] = []
     maxw = os.get_terminal_size().columns if sys.stdout.isatty() else 120
-    branches = list(iter_local_branches(limit))
+    branches = list(git_ops.iter_local_branches(limit))
 
     # Skip expensive operations in fast mode
-    fast_mode = os.environ.get("GIT_BRANCHES_OFFLINE") == "1"
+    fast_mode = github._offline()
 
     if not fast_mode:
         base = github.detect_base_repo()
@@ -56,18 +47,18 @@ def _build_rows_local(
         if os.environ.get("GIT_BRANCHES_PREFETCH_DETAILS") in ("1", "true", "yes"):
             github.prefetch_pr_details(branches)
         # Preload commit info cache with a single for-each-ref call
-        build_last_commit_cache_for_refs([f"refs/heads/{b}" for b in branches])
+        git_ops.build_last_commit_cache_for_refs([f"refs/heads/{b}" for b in branches])
         # Optionally prefetch Actions status for these SHAs if checks are enabled
         if github.checks_enabled():  # noqa: SLF001
             shas: list[str] = []
             for b in branches:
-                info = get_last_commit_from_cache(b)
+                info = git_ops.get_last_commit_from_cache(b)
                 if info:
                     shas.append(info[1])  # full sha
             github.prefetch_actions_for_shas(base, shas)
     else:
         # In fast mode, still preload commit cache for basic info
-        build_last_commit_cache_for_refs([f"refs/heads/{b}" for b in branches])
+        git_ops.build_last_commit_cache_for_refs([f"refs/heads/{b}" for b in branches])
         base = None
 
     for b in branches:
@@ -77,7 +68,7 @@ def _build_rows_local(
         if not fast_mode:
             status = github.get_pr_status_from_cache(b, colors)
             # Append cached Actions status icon if available (no network)
-            info = get_last_commit_from_cache(b)
+            info = git_ops.get_last_commit_from_cache(b)
             if info:
                 act = github.peek_actions_status_for_sha(info[1])
                 if act:
@@ -130,13 +121,13 @@ def _build_rows_local(
                     is_own_pr = pr_author == current_user and current_user != ""
 
         # Check if branch is in a worktree
-        is_worktree_branch = is_branch_in_worktree(b)
+        is_worktree_branch = git_ops.is_branch_in_worktree(b)
 
         # Filter for worktree-only mode: skip branches not in worktrees
         if worktree and not is_worktree_branch:
             continue
 
-        row = format_branch_info(
+        row = render.format_branch_info(
             b,
             b,
             is_current,
@@ -150,10 +141,10 @@ def _build_rows_local(
     return rows
 
 
-def _build_rows_remote(
+def build_rows_remote(
     remote: str,
     limit: int | None,
-    colors: Colors,
+    colors: render.Colors,
     no_wip: bool = False,
     no_pr: bool = False,
     worktree: bool = False,
@@ -163,27 +154,27 @@ def _build_rows_remote(
 
     rows: list[tuple[str, str]] = []
     maxw = os.get_terminal_size().columns if sys.stdout.isatty() else 120
-    branches = list(iter_remote_branches(remote, limit))
+    branches = list(git_ops.iter_remote_branches(remote, limit))
 
     # Skip expensive operations in fast mode
-    fast_mode = os.environ.get("GIT_BRANCHES_OFFLINE") == "1"
+    fast_mode = github._offline()
 
     if not fast_mode:
         github.fetch_prs_and_populate_cache()
         if os.environ.get("GIT_BRANCHES_PREFETCH_DETAILS") in ("1", "true", "yes"):
             github.prefetch_pr_details([f"{remote}/{b}" for b in branches])
         # Preload commit info cache for remote refs
-        build_last_commit_cache_for_refs([f"refs/remotes/{remote}/{b}" for b in branches])
+        git_ops.build_last_commit_cache_for_refs([f"refs/remotes/{remote}/{b}" for b in branches])
         if github.checks_enabled():  # noqa: SLF001
             shas: list[str] = []
             for b in branches:
-                info = get_last_commit_from_cache(f"{remote}/{b}")
+                info = git_ops.get_last_commit_from_cache(f"{remote}/{b}")
                 if info:
                     shas.append(info[1])
             github.prefetch_actions_for_shas(github.detect_base_repo(), shas)
     else:
         # In fast mode, still preload commit cache for basic info
-        build_last_commit_cache_for_refs([f"refs/remotes/{remote}/{b}" for b in branches])
+        git_ops.build_last_commit_cache_for_refs([f"refs/remotes/{remote}/{b}" for b in branches])
 
     for b in branches:
         status = ""
@@ -191,7 +182,7 @@ def _build_rows_remote(
         if not fast_mode:
             status = github.get_pr_status_from_cache(b, colors)
             # Append cached Actions status icon if available (no network)
-            info = get_last_commit_from_cache(f"{remote}/{b}")
+            info = git_ops.get_last_commit_from_cache(f"{remote}/{b}")
             if info:
                 act = github.peek_actions_status_for_sha(info[1])
                 if act:
@@ -242,7 +233,7 @@ def _build_rows_remote(
         if worktree and not is_worktree_branch:
             continue
 
-        row = format_branch_info(
+        row = render.format_branch_info(
             b,
             f"{remote}/{b}",
             False,
