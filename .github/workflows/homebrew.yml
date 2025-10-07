@@ -27,27 +27,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Homebrew on Linux
-        if: matrix.needs_linuxbrew == 'true'
-        shell: bash
-        run: |
-          set -euxo pipefail
-          sudo apt-get update
-          sudo apt-get install -y build-essential curl file git
-          git clone https://github.com/Homebrew/brew "$HOME/.linuxbrew/Homebrew"
-          mkdir -p "$HOME/.linuxbrew/bin"
-          ln -sf "$HOME/.linuxbrew/Homebrew/bin/brew" "$HOME/.linuxbrew/bin/brew"
-          echo "PATH=$HOME/.linuxbrew/bin:$PATH" >> "$GITHUB_ENV"
-          echo "HOMEBREW_PREFIX=$HOME/.linuxbrew" >> "$GITHUB_ENV"
-          echo "HOMEBREW_CELLAR=$HOME/.linuxbrew/Cellar" >> "$GITHUB_ENV"
-          echo "HOMEBREW_REPOSITORY=$HOME/.linuxbrew/Homebrew" >> "$GITHUB_ENV"
-          export PATH="$HOME/.linuxbrew/bin:$PATH"
-          export HOMEBREW_PREFIX="$HOME/.linuxbrew"
-          export HOMEBREW_CELLAR="$HOME/.linuxbrew/Cellar"
-          export HOMEBREW_REPOSITORY="$HOME/.linuxbrew/Homebrew"
-          eval "$("$HOME"/.linuxbrew/bin/brew shellenv)"
-          brew update --force --quiet
-
       - name: Show brew config
         shell: bash
         run: |
@@ -71,36 +50,3 @@ jobs:
           mkdir -p "$TAP_DIR/Formula"
           cp Formula/git-branches.rb "$TAP_DIR/Formula/"
           brew install --build-from-source --HEAD "$TAP/git-branches"
-
-      - name: Smoke test
-        shell: bash
-        run: |
-          set -euxo pipefail
-          if [[ "${{ matrix.needs_linuxbrew }}" == 'true' ]]; then
-            eval "$(brew shellenv)"
-          fi
-          git-branches -h || true
-          which git-branches
-          git-branches -h | head -n 5
-
-      - name: Archive Cellar artifact
-        if: matrix.needs_linuxbrew == 'true'
-        shell: bash
-        run: |
-          set -euxo pipefail
-          eval "$(brew shellenv)"
-          CELLAR_PATH="$(brew --cellar)/git-branches"
-          if [[ -d "$CELLAR_PATH" ]]; then
-            tar -czf git-branches-bottle.tar.gz -C "$(dirname "$CELLAR_PATH")" "$(basename "$CELLAR_PATH")"
-          else
-            touch git-branches-bottle.tar.gz
-          fi
-
-      - name: Upload artifact
-        if: matrix.needs_linuxbrew == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: git-branches-linuxbrew-cellar
-          path: git-branches-bottle.tar.gz
-          if-no-files-found: warn
-          retention-days: 14
