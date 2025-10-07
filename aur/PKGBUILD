@@ -32,9 +32,18 @@ package() {
   cd "${srcdir}/git-branches" || exit
   python -m installer --destdir="$pkgdir" dist/*.whl
 
-  # Shell completions
-  install -Dm644 contrib/_git-branches "$pkgdir/usr/share/zsh/site-functions/_git-branches"
-  install -Dm644 contrib/git-branches.bash "$pkgdir/usr/share/bash-completion/completions/git-branches"
+  # Shell completions generated from Click CLI
+  install -dm755 "$pkgdir/usr/share/bash-completion/completions"
+  python -m git_branch_list.cli completion --shell bash \
+    > "$pkgdir/usr/share/bash-completion/completions/git-branches"
+
+  install -dm755 "$pkgdir/usr/share/zsh/site-functions"
+  python -m git_branch_list.cli completion --shell zsh \
+    > "$pkgdir/usr/share/zsh/site-functions/_git-branches"
+
+  install -dm755 "$pkgdir/usr/share/fish/vendor_completions.d"
+  python -m git_branch_list.cli completion --shell fish \
+    > "$pkgdir/usr/share/fish/vendor_completions.d/git-branches.fish"
 
   # Docs
   install -Dm644 README.md "$pkgdir/usr/share/doc/${pkgname}/README.md"
