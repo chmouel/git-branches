@@ -11,6 +11,7 @@ class GitBranches < Formula
 
   def install
     py = Formula["python@3.12"].opt_bin/"python3.12"
+    venv_python = libexec/"bin/python"
     # Create venv
     system py, "-m", "venv", libexec
     # Upgrade pip tooling
@@ -19,6 +20,17 @@ class GitBranches < Formula
     system libexec/"bin/pip", "install", buildpath
     # Link the console script
     bin.install_symlink libexec/"bin/git-branches"
+
+    # Generate shell completions via the Click CLI
+    (bash_completion/"git-branches").write Utils.safe_popen_read(
+      venv_python, "-m", "git_branch_list.cli", "completion", "--shell", "bash"
+    )
+    (zsh_completion/"_git-branches").write Utils.safe_popen_read(
+      venv_python, "-m", "git_branch_list.cli", "completion", "--shell", "zsh"
+    )
+    (fish_completion/"git-branches.fish").write Utils.safe_popen_read(
+      venv_python, "-m", "git_branch_list.cli", "completion", "--shell", "fish"
+    )
   end
 
   test do
