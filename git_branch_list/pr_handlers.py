@@ -16,10 +16,7 @@ import os
 import pathlib
 import sys
 
-from git_branch_list import commands
-
-from . import fzf_ui, git_ops, github, utils, worktrees
-from .commands import run
+from . import commands, fzf_ui, git_ops, github, utils, worktrees
 from .render import Colors, setup_colors, truncate_display
 
 
@@ -46,7 +43,7 @@ def _checkout_pr_branch(colors: Colors, pr_data: dict, remote: str) -> int:
     ):
         return 1
     try:
-        utils.run(
+        commands.run(
             [
                 "gh",
                 "pr",
@@ -78,7 +75,7 @@ def _create_worktree_from_pr(colors: Colors, pr_data: dict) -> int:
     if not fzf_ui.confirm(question):
         return 1
     try:
-        utils.run(["git", "worktree", "add", str(worktree_path)], check=True)
+        commands.run(["git", "worktree", "add", str(worktree_path)], check=True)
         worktrees.save_last_worktree(str(worktree_path))
     except Exception as exc:
         print(f"Error: git worktree add failed: {exc}", file=sys.stderr)
@@ -89,7 +86,7 @@ def _create_worktree_from_pr(colors: Colors, pr_data: dict) -> int:
         return 1
     pr_number = pr_data.get("number")
     try:
-        utils.run(
+        commands.run(
             [
                 "gh",
                 "pr",
@@ -204,7 +201,7 @@ def browse_pull_requests(args) -> int:
 
 def _is_workdir_dirty() -> bool:
     try:
-        cp = run(["git", "status", "--porcelain"], check=True)
+        cp = commands.run(["git", "status", "--porcelain"], check=True)
         return bool(cp.stdout.strip())
     except Exception:
         return False
